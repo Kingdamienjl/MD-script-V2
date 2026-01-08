@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
 
 from jduel_bot.config import BotConfig
 from logic.action_queue import Action
+from logic.profile import load_profile
 from logic.strategy_base import Strategy
 
 
@@ -33,18 +31,18 @@ class NoopStrategy:
         return None
 
 
-def load_profile(deck_dir: str) -> Dict[str, Any]:
+def load_profile_for_deck(deck_dir: str, fallback_path: str) -> dict:
     profile_path = Path(deck_dir) / "profile.json"
-    legacy_path = Path(os.getenv("BOT_PROFILE_PATH", "logic/deck_profile.json")).expanduser()
     if profile_path.exists():
-        return json.loads(profile_path.read_text())
-    if legacy_path.exists():
+        return load_profile(str(profile_path))
+    fallback = Path(fallback_path)
+    if fallback.exists():
         logging.warning(
             "Profile missing in %s; falling back to legacy profile at %s",
             deck_dir,
-            legacy_path,
+            fallback,
         )
-        return json.loads(legacy_path.read_text())
+        return load_profile(str(fallback))
     raise FileNotFoundError(f"Missing profile.json in {deck_dir} and legacy profile")
 
 
@@ -62,10 +60,10 @@ def _import_strategy_module(deck_dir: Path) -> object:
     return module
 
 
-def load_strategy(deck_name: str, strategy_name: str, decks_dir: str) -> Strategy:
+def load_strategy(deck_name: str, strategy_name: str, decks_dir: str, profile_path: str) -> Strategy:
     deck_dir = Path(decks_dir) / deck_name
     try:
-        profile = load_profile(str(deck_dir))
+        profile = load_profile_for_deck(str(deck_dir), profile_path)
         module = _import_strategy_module(deck_dir)
         get_strategy = getattr(module, "get_strategy", None)
         if get_strategy is None:

@@ -41,6 +41,13 @@ def _parse_bool(value: str | None, default: bool) -> bool:
     return default
 
 
+def _default_profile_path(decks_dir: Path) -> Path:
+    deck_profile = decks_dir / "swordsoul_tenyi" / "profile.json"
+    if deck_profile.exists():
+        return deck_profile
+    return Path("logic/deck_profile.json")
+
+
 def load_config() -> BotConfig:
     """Load configuration from environment variables."""
     action_delay_ms = _parse_int(os.getenv("BOT_ACTION_DELAY_MS"), 120)
@@ -48,10 +55,11 @@ def load_config() -> BotConfig:
     dialog_max_cycles = _parse_int(os.getenv("BOT_DIALOG_MAX_CYCLES"), 12)
     dump_dir = Path(os.getenv("BOT_DUMP_DIR", "artifacts")).expanduser()
     max_actions_per_tick = _parse_int(os.getenv("BOT_MAX_ACTIONS_PER_TICK"), 2)
-    profile_path = Path(os.getenv("BOT_PROFILE_PATH", "logic/deck_profile.json")).expanduser()
+    decks_dir = Path(os.getenv("BOT_DECKS_DIR", "logic/decks")).expanduser()
+    profile_default = _default_profile_path(decks_dir)
+    profile_path = Path(os.getenv("BOT_PROFILE_PATH", str(profile_default))).expanduser()
     strict_profile = _parse_bool(os.getenv("BOT_STRICT_PROFILE"), True)
     deck = os.getenv("BOT_DECK", "swordsoul_tenyi")
-    decks_dir = Path(os.getenv("BOT_DECKS_DIR", "logic/decks")).expanduser()
     strategy = os.getenv("BOT_STRATEGY", "default")
 
     dump_dir.mkdir(parents=True, exist_ok=True)

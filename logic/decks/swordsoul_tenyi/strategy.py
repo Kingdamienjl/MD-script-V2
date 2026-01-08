@@ -8,6 +8,7 @@ from typing import Iterable, Optional
 
 from jduel_bot.config import BotConfig
 from logic.action_queue import Action
+from logic.profile import ProfileIndex
 from logic.state_manager import Snapshot
 from logic.strategy_base import CardSelection, Strategy
 
@@ -22,17 +23,14 @@ class SwordsoulTenyiStrategy(Strategy):
         self, state: Snapshot, client: object, cfg: BotConfig
     ) -> list[Action]:
         actions: list[Action] = []
-        starters = tuple(self.profile.get("starters", []))
-        spells = tuple(self.profile.get("spells", []))
-        traps = tuple(self.profile.get("traps", []))
-        extra_deck_priority = tuple(self.profile.get("extra_deck_priority", []))
+        profile_index = ProfileIndex(self.profile)
         strict_profile = cfg.strict_profile
 
         if state.can_normal_summon and state.free_monster_zones > 0:
             starter_pick = self._pick_card_by_preference(
                 state.hand,
                 ["Swordsoul of Mo Ye", "Swordsoul of Taia"],
-                starters,
+                profile_index,
                 strict_profile,
             )
             if starter_pick:
@@ -51,7 +49,10 @@ class SwordsoulTenyiStrategy(Strategy):
                         description=f"Activate effect of {card_name}",
                     )
                 )
-                for name in extra_deck_priority:
+                extra_names = profile_index.extra_deck_priority
+                if strict_profile:
+                    extra_names = tuple(profile_index.filter_allowed(extra_names))
+                for name in extra_names:
                     actions.append(
                         Action(
                             type="extra_deck_summon",
@@ -65,8 +66,9 @@ class SwordsoulTenyiStrategy(Strategy):
             backrow_pick = self._pick_card_by_preference(
                 state.hand,
                 [],
-                spells + traps,
+                profile_index,
                 strict_profile,
+                include_backrow=True,
             )
             if backrow_pick:
                 hand_index, card_name = backrow_pick
@@ -95,30 +97,44 @@ class SwordsoulTenyiStrategy(Strategy):
         client: object,
         cfg: BotConfig,
     ) -> Optional[list[CardSelection]]:
-        return None
+        profile_index = ProfileIndex(self.profile)
+        if not cfg.strict_profile:
+            return None
+        for name in dialog_cards:
+            if name and not profile_index.is_allowed(name):
+                logging.info("[PROFILE] blocked unknown card name=%s", name)
+        allowed_indices = [
+            idx for idx, name in enumerate(dialog_cards) if profile_index.is_allowed(name)
+        ]
+        if not allowed_indices:
+            return None
+        return [CardSelection(index=allowed_indices[0], button="left")]
 
     def _pick_card_by_preference(
         self,
         hand,
         preferred_names: Iterable[str],
-        allowed_names: Iterable[str],
+        profile_index: ProfileIndex,
         strict_profile: bool,
+        include_backrow: bool = False,
     ) -> Optional[tuple[int, str]]:
-        allowed_set = set(allowed_names)
+        allowed = profile_index.allowed_names
         named_cards = [card for card in hand if card.name]
         for card in named_cards:
-            if strict_profile and card.name not in allowed_set:
+            if strict_profile and card.name not in allowed:
                 logging.info("[PROFILE] blocked unknown card name=%s", card.name)
         for name in preferred_names:
             for card in named_cards:
-                if card.name == name and name in allowed_set:
+                if card.name == name and profile_index.is_allowed(name):
                     return card.index, card.name
         for card in named_cards:
             if strict_profile:
-                if card.name in allowed_set:
+                if card.name in allowed:
                     return card.index, card.name
             else:
                 return card.index, card.name
+        if include_backrow and strict_profile:
+            return None
         return None
 
 

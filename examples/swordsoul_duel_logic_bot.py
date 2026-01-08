@@ -45,8 +45,10 @@ class SwordsoulDuelLogicBot:
         self.state = DuelState()
         self.dialog_resolver = DialogResolver()
         self.action_queue = ActionQueue()
-        self.strategy = load_strategy(cfg.deck, cfg.strategy, str(cfg.decks_dir))
         self.profile_path = self._resolve_profile_path()
+        self.strategy = load_strategy(
+            cfg.deck, cfg.strategy, str(cfg.decks_dir), str(self.profile_path)
+        )
 
     def run(self) -> None:
         _configure_logging()
