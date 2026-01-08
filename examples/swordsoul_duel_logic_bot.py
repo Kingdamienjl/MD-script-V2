@@ -11,7 +11,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Sequence
 
-from jduel_bot.env_config import BotConfig, load_config
+from jduel_bot.config import BotConfig, load_config
+from logic.action_queue import ActionQueue
+from logic.decision_engine import DecisionEngine, load_profile
+from logic.state_manager import snapshot_state
 
 
 class DialogButtonType(str, Enum):
@@ -65,11 +68,23 @@ class DialogResolver:
             return self._run_escape_sequence(bot)
 
         if dialog_list:
-            bot.select_dialog_card_by_index(0, dialog_list)
+            preferred_index = self._pick_non_matching_index(
+                dialog_list, bot.state.last_used_card_name
+            )
+            bot.select_dialog_card_by_index(preferred_index, dialog_list)
             return bot.is_inputting()
 
         bot.confirm_dialog()
         return bot.is_inputting()
+
+    def _pick_non_matching_index(
+        self, dialog_list: Sequence[str], last_used_name: Optional[str]
+    ) -> int:
+        if last_used_name:
+            for idx, name in enumerate(dialog_list):
+                if name != last_used_name:
+                    return idx
+        return 0
 
     def _run_escape_sequence(self, bot: "SwordsoulDuelLogicBot") -> bool:
         if self.escape_step == 0:
@@ -112,9 +127,8 @@ class DialogResolver:
         self.signature = DialogSignatureTracker()
 
 
-def _configure_logging(cfg: BotConfig) -> None:
+def _configure_logging() -> None:
     logging.basicConfig(
-        filename=cfg.log_file,
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
@@ -125,56 +139,28 @@ class SwordsoulDuelLogicBot:
         self.cfg = cfg
         self.state = DuelState()
         self.dialog_resolver = DialogResolver(cfg)
+        self.action_queue = ActionQueue()
+        self.profile = load_profile(cfg.profile_path)
+        self.decision_engine = DecisionEngine(self.profile, cfg.strict_profile)
 
     def run(self) -> None:
-        _configure_logging(self.cfg)
-        logging.info("Connecting to duel service at %s", self.cfg.zmq_address)
+        _configure_logging()
+        logging.info("Starting duel logic bot.")
 
-        while self._within_failsafe_limits():
-            if not self._perform_turn():
-                break
-
-        logging.info(
-            "Exited after %s turns and %s actions",
-            self.state.turn_count,
-            self.state.action_count,
-        )
-
-    def _within_failsafe_limits(self) -> bool:
-        if not self.cfg.failsafe_enabled:
-            return True
-        if self.state.action_count >= self.cfg.failsafe_action_limit:
-            logging.warning("Failsafe action limit reached.")
-            return False
-        if self.state.turn_count >= self.cfg.failsafe_turn_limit:
-            logging.warning("Failsafe turn limit reached.")
-            return False
-        if self.state.stuck_dialog_cycles >= self.cfg.stuck_dialog_cycle_limit:
-            logging.warning("Stuck dialog cycle limit reached.")
-            return False
-        return True
-
-    def _perform_turn(self) -> bool:
-        self.state.turn_count += 1
-        for attempt in range(1, self.cfg.max_retries + 1):
-            if self._request_action(attempt):
-                return True
-            logging.info("Retrying action after timeout.")
-        return False
-
-    def _request_action(self, attempt: int) -> bool:
-        self.state.action_count += 1
-        logging.info("Attempt %s with timeout %sms", attempt, self.cfg.timeout_ms)
-        time.sleep(self.cfg.action_delay_ms / 1000)
-
-        if self.dialog_resolver.resolve(self):
-            return True
-
-        self.handle_my_main_phase_1()
-        return True
+        while True:
+            self.state.turn_count += 1
+            self.handle_my_main_phase_1()
+            time.sleep(self.cfg.action_delay_ms / 1000)
 
     def handle_my_main_phase_1(self) -> None:
-        logging.info("Handling main phase 1 logic.")
+        if self.is_inputting():
+            self.dialog_resolver.resolve(self)
+            return
+
+        snapshot = snapshot_state(self)
+        actions = self.decision_engine.plan_main_phase_1(snapshot, self)
+        self.action_queue.push(actions)
+        self.action_queue.execute(self, self.cfg, self.dialog_resolver)
 
     def is_inputting(self) -> bool:
         return False
@@ -249,6 +235,43 @@ class SwordsoulDuelLogicBot:
 
     def get_board_state(self) -> dict:
         return {}
+
+    def get_hand_size(self) -> int:
+        return 0
+
+    def get_hand_card_name(self, index: int) -> Optional[str]:
+        _ = index
+        return None
+
+    def can_normal_summon(self) -> bool:
+        return True
+
+    def get_free_spell_trap_zones(self) -> int:
+        return 0
+
+    def get_free_monster_zones(self) -> int:
+        return 1
+
+    def normal_summon_from_hand(self, hand_index: int) -> None:
+        self.state.last_used_card_name = self._get_known_hand_name(hand_index)
+
+    def activate_effect_from_field(self, field_index: int) -> None:
+        _ = field_index
+
+    def perform_extra_deck_summon(self, name: str) -> None:
+        _ = name
+
+    def set_spell_trap_from_hand(self, hand_index: int) -> None:
+        self.state.last_used_card_name = self._get_known_hand_name(hand_index)
+
+    def advance_phase(self, phase: str) -> None:
+        self.state.phase = phase
+
+    def _get_known_hand_name(self, hand_index: int) -> Optional[str]:
+        try:
+            return self.get_hand_card_name(hand_index)
+        except Exception:
+            return None
 
 
 if __name__ == "__main__":

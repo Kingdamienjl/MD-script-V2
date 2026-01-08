@@ -1,2 +1,4 @@
-logs/
 artifacts/
+logs/
+__pycache__/
+*.log
