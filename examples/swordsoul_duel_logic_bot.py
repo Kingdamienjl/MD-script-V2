@@ -13,8 +13,9 @@ from typing import Optional, Sequence
 
 from jduel_bot.config import BotConfig, load_config
 from logic.action_queue import ActionQueue
-from logic.decision_engine import DecisionEngine, load_profile
 from logic.state_manager import snapshot_state
+from logic.strategy_base import CardSelection
+from logic.strategy_registry import load_strategy
 
 
 class DialogButtonType(str, Enum):
@@ -140,11 +141,17 @@ class SwordsoulDuelLogicBot:
         self.state = DuelState()
         self.dialog_resolver = DialogResolver(cfg)
         self.action_queue = ActionQueue()
-        self.profile = load_profile(cfg.profile_path)
-        self.decision_engine = DecisionEngine(self.profile, cfg.strict_profile)
+        self.strategy = load_strategy(cfg.deck, cfg.strategy, str(cfg.decks_dir))
+        self.profile_path = self._resolve_profile_path()
 
     def run(self) -> None:
         _configure_logging()
+        logging.info(
+            "[DECK] deck=%s strategy=%s profile_path=%s",
+            self.cfg.deck,
+            self.cfg.strategy,
+            self.profile_path,
+        )
         logging.info("Starting duel logic bot.")
 
         while True:
@@ -154,13 +161,45 @@ class SwordsoulDuelLogicBot:
 
     def handle_my_main_phase_1(self) -> None:
         if self.is_inputting():
-            self.dialog_resolver.resolve(self)
+            dialog_list = list(self.get_dialog_card_list())
+            snapshot = snapshot_state(self)
+            selections = self.strategy.on_dialog(dialog_list, snapshot, self, self.cfg)
+            if selections:
+                self._apply_dialog_selections(selections)
+            else:
+                self.dialog_resolver.resolve(self)
             return
 
         snapshot = snapshot_state(self)
-        actions = self.decision_engine.plan_main_phase_1(snapshot, self)
+        actions = self.strategy.plan_main_phase_1(snapshot, self, self.cfg)
+        logging.info(
+            "[PLAN] %s actions: %s",
+            len(actions),
+            ", ".join(action.description for action in actions),
+        )
         self.action_queue.push(actions)
         self.action_queue.execute(self, self.cfg, self.dialog_resolver)
+
+    def _apply_dialog_selections(self, selections: Sequence[CardSelection]) -> None:
+        max_interactions = min(2, self.cfg.max_actions_per_tick)
+        for selection in selections[:max_interactions]:
+            if not self.is_inputting():
+                return
+            button = DialogButtonType.Right if selection.button == "right" else DialogButtonType.Left
+            if selection.index is None:
+                self.select_card_from_dialog(None, button, self.cfg.dialog_click_delay_ms)
+            else:
+                if button is DialogButtonType.Left:
+                    self.select_dialog_card_by_index(selection.index, self.get_dialog_card_list())
+                else:
+                    self.select_card_from_dialog(selection.index, button, self.cfg.dialog_click_delay_ms)
+            time.sleep(self.cfg.dialog_click_delay_ms / 1000)
+
+    def _resolve_profile_path(self) -> Path:
+        deck_profile = self.cfg.decks_dir / self.cfg.deck / "profile.json"
+        if deck_profile.exists():
+            return deck_profile
+        return self.cfg.profile_path
 
     def is_inputting(self) -> bool:
         return False

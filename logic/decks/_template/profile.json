@@ -1,0 +1,18 @@
+{
+  "starters": [
+    "Starter Card A",
+    "Starter Card B"
+  ],
+  "extenders": [
+    "Extender Card A"
+  ],
+  "spells": [
+    "Spell Card A"
+  ],
+  "traps": [
+    "Trap Card A"
+  ],
+  "extra_deck_priority": [
+    "Extra Deck Boss A"
+  ]
+}

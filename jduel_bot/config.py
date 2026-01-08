@@ -16,6 +16,9 @@ class BotConfig:
     max_actions_per_tick: int
     profile_path: Path
     strict_profile: bool
+    deck: str
+    decks_dir: Path
+    strategy: str
 
 
 def _parse_int(value: str | None, default: int) -> int:
@@ -47,9 +50,13 @@ def load_config() -> BotConfig:
     max_actions_per_tick = _parse_int(os.getenv("BOT_MAX_ACTIONS_PER_TICK"), 2)
     profile_path = Path(os.getenv("BOT_PROFILE_PATH", "logic/deck_profile.json")).expanduser()
     strict_profile = _parse_bool(os.getenv("BOT_STRICT_PROFILE"), True)
+    deck = os.getenv("BOT_DECK", "swordsoul_tenyi")
+    decks_dir = Path(os.getenv("BOT_DECKS_DIR", "logic/decks")).expanduser()
+    strategy = os.getenv("BOT_STRATEGY", "default")
 
     dump_dir.mkdir(parents=True, exist_ok=True)
     profile_path.parent.mkdir(parents=True, exist_ok=True)
+    decks_dir.mkdir(parents=True, exist_ok=True)
 
     return BotConfig(
         action_delay_ms=action_delay_ms,
@@ -59,4 +66,7 @@ def load_config() -> BotConfig:
         max_actions_per_tick=max_actions_per_tick,
         profile_path=profile_path,
         strict_profile=strict_profile,
+        deck=deck,
+        decks_dir=decks_dir,
+        strategy=strategy,
     )
