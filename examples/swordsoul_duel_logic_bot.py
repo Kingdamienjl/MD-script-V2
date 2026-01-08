@@ -13,14 +13,9 @@ from typing import Optional, Sequence
 
 from jduel_bot.config import BotConfig, load_config
 from logic.action_queue import ActionQueue
+from logic.dialog_resolver import DialogButtonType, DialogResolver
 from logic.state_manager import snapshot_state
-from logic.strategy_base import CardSelection
 from logic.strategy_registry import load_strategy
-
-
-class DialogButtonType(str, Enum):
-    Left = "left"
-    Right = "right"
 
 
 class ActivateConfirmMode(str, Enum):
@@ -37,97 +32,6 @@ class DuelState:
     phase: str = "main1"
 
 
-@dataclass
-class DialogSignatureTracker:
-    last_signature: Optional[tuple[str, ...]] = None
-    repeats_count: int = 0
-    last_change_time: float = 0.0
-
-
-class DialogResolver:
-    def __init__(self, cfg: BotConfig) -> None:
-        self.cfg = cfg
-        self.signature = DialogSignatureTracker()
-        self.escape_step = 0
-
-    def resolve(self, bot: "SwordsoulDuelLogicBot") -> bool:
-        if not bot.is_inputting():
-            self._reset_signature()
-            self.escape_step = 0
-            return False
-
-        dialog_list = bot.get_dialog_card_list()
-        self._update_signature(dialog_list)
-
-        if self.signature.repeats_count > self.cfg.dialog_max_cycles:
-            logging.warning("Dialog signature stuck; attempting escape sequence.")
-            bot.state.stuck_dialog_cycles += 1
-            bot.dump_dialog_snapshot(
-                dialog_list=dialog_list,
-                last_used_card_name=bot.state.last_used_card_name,
-            )
-            return self._run_escape_sequence(bot)
-
-        if dialog_list:
-            preferred_index = self._pick_non_matching_index(
-                dialog_list, bot.state.last_used_card_name
-            )
-            bot.select_dialog_card_by_index(preferred_index, dialog_list)
-            return bot.is_inputting()
-
-        bot.confirm_dialog()
-        return bot.is_inputting()
-
-    def _pick_non_matching_index(
-        self, dialog_list: Sequence[str], last_used_name: Optional[str]
-    ) -> int:
-        if last_used_name:
-            for idx, name in enumerate(dialog_list):
-                if name != last_used_name:
-                    return idx
-        return 0
-
-    def _run_escape_sequence(self, bot: "SwordsoulDuelLogicBot") -> bool:
-        if self.escape_step == 0:
-            self.escape_step = 1
-        interactions = 0
-        while interactions < 2 and self.escape_step:
-            interactions += 1
-            if self.escape_step == 1:
-                bot.cancel_activation_prompts()
-                self.escape_step = 2
-            elif self.escape_step == 2:
-                bot.handle_unexpected_prompts()
-                self.escape_step = 3
-            elif self.escape_step == 3:
-                bot.confirm_dialog()
-                self.escape_step = 4
-            elif self.escape_step == 4:
-                bot.wait_for_input_enabled()
-                self.escape_step = 5
-            elif self.escape_step == 5:
-                if bot.is_inputting():
-                    bot.toggle_activation_confirmation_for_escape()
-                self.escape_step = 0
-            self._sleep_click_delay()
-        return bot.is_inputting()
-
-    def _sleep_click_delay(self) -> None:
-        time.sleep(self.cfg.dialog_click_delay_ms / 1000)
-
-    def _update_signature(self, dialog_list: Sequence[str]) -> None:
-        signature = tuple(dialog_list)
-        if signature == self.signature.last_signature:
-            self.signature.repeats_count += 1
-        else:
-            self.signature.last_signature = signature
-            self.signature.repeats_count = 0
-            self.signature.last_change_time = time.monotonic()
-
-    def _reset_signature(self) -> None:
-        self.signature = DialogSignatureTracker()
-
-
 def _configure_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -139,7 +43,7 @@ class SwordsoulDuelLogicBot:
     def __init__(self, cfg: BotConfig) -> None:
         self.cfg = cfg
         self.state = DuelState()
-        self.dialog_resolver = DialogResolver(cfg)
+        self.dialog_resolver = DialogResolver()
         self.action_queue = ActionQueue()
         self.strategy = load_strategy(cfg.deck, cfg.strategy, str(cfg.decks_dir))
         self.profile_path = self._resolve_profile_path()
@@ -161,13 +65,9 @@ class SwordsoulDuelLogicBot:
 
     def handle_my_main_phase_1(self) -> None:
         if self.is_inputting():
-            dialog_list = list(self.get_dialog_card_list())
-            snapshot = snapshot_state(self)
-            selections = self.strategy.on_dialog(dialog_list, snapshot, self, self.cfg)
-            if selections:
-                self._apply_dialog_selections(selections)
-            else:
-                self.dialog_resolver.resolve(self)
+            result = self.dialog_resolver.resolve(self)
+            if result == "bailout":
+                return
             return
 
         snapshot = snapshot_state(self)
@@ -179,21 +79,6 @@ class SwordsoulDuelLogicBot:
         )
         self.action_queue.push(actions)
         self.action_queue.execute(self, self.cfg, self.dialog_resolver)
-
-    def _apply_dialog_selections(self, selections: Sequence[CardSelection]) -> None:
-        max_interactions = min(2, self.cfg.max_actions_per_tick)
-        for selection in selections[:max_interactions]:
-            if not self.is_inputting():
-                return
-            button = DialogButtonType.Right if selection.button == "right" else DialogButtonType.Left
-            if selection.index is None:
-                self.select_card_from_dialog(None, button, self.cfg.dialog_click_delay_ms)
-            else:
-                if button is DialogButtonType.Left:
-                    self.select_dialog_card_by_index(selection.index, self.get_dialog_card_list())
-                else:
-                    self.select_card_from_dialog(selection.index, button, self.cfg.dialog_click_delay_ms)
-            time.sleep(self.cfg.dialog_click_delay_ms / 1000)
 
     def _resolve_profile_path(self) -> Path:
         deck_profile = self.cfg.decks_dir / self.cfg.deck / "profile.json"
@@ -262,7 +147,7 @@ class SwordsoulDuelLogicBot:
         self,
         card_index: Optional[int],
         button: DialogButtonType,
-        delay_ms: int,
+        delay_ms: int | None = None,
     ) -> None:
         _ = (card_index, button, delay_ms)
 
