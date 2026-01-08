@@ -1,0 +1,45 @@
+{
+  "deck_name": "swordsoul_tenyi",
+  "monsters": [
+    "Swordsoul of Mo Ye",
+    "Swordsoul Strategist Longyuan",
+    "Swordsoul of Taia",
+    "Tenyi Spirit - Ashuna",
+    "Tenyi Spirit - Vishuda",
+    "Tenyi Spirit - Adhara"
+  ],
+  "spells": [
+    "Swordsoul Emergence",
+    "Heavenly Dragon Circle"
+  ],
+  "traps": [
+    "Swordsoul Blackout"
+  ],
+  "starters_priority": [
+    "Swordsoul of Mo Ye",
+    "Swordsoul of Taia",
+    "Swordsoul Strategist Longyuan"
+  ],
+  "extenders_priority": [
+    "Tenyi Spirit - Ashuna",
+    "Tenyi Spirit - Vishuda",
+    "Tenyi Spirit - Adhara"
+  ],
+  "discard_priority": [
+    "Tenyi Spirit - Ashuna",
+    "Tenyi Spirit - Vishuda",
+    "Tenyi Spirit - Adhara"
+  ],
+  "set_backrow_priority": [
+    "Swordsoul Blackout",
+    "Swordsoul Emergence",
+    "Heavenly Dragon Circle"
+  ],
+  "extra_deck_priority": [
+    "Swordsoul Grandmaster - Chixiao",
+    "Baronne de Fleur",
+    "Baxia, Brightness of the Yang Zing",
+    "Yazi, Evil of the Yang Zing"
+  ],
+  "notes": "Profile-driven priorities for Swordsoul Tenyi opener"
+}
