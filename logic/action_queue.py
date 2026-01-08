@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, List
 
 from jduel_bot.config import BotConfig
+from logic.state_manager import TurnCooldowns
 
 
 @dataclass(frozen=True)
@@ -51,12 +52,15 @@ class ActionQueue:
                 return
 
     def _execute_action(self, client: object, action: Action) -> bool:
+        cooldowns = getattr(client, "turn_cooldowns", None)
         try:
             if "card_name" in action.args and hasattr(client, "state"):
                 try:
                     client.state.last_used_card_name = action.args["card_name"]
                 except Exception:
                     pass
+            if isinstance(cooldowns, TurnCooldowns):
+                self._update_cooldowns(cooldowns, action)
             if action.type == "normal_summon":
                 getattr(client, "normal_summon_from_hand", lambda _idx: None)(
                     action.args["hand_index"]
@@ -64,6 +68,11 @@ class ActionQueue:
                 return True
             if action.type == "special_summon":
                 getattr(client, "special_summon_from_hand", lambda _idx: None)(
+                    action.args["hand_index"]
+                )
+                return True
+            if action.type == "activate_hand_effect":
+                getattr(client, "activate_effect_from_hand", lambda _idx: None)(
                     action.args["hand_index"]
                 )
                 return True
@@ -90,3 +99,16 @@ class ActionQueue:
         except Exception:
             return False
         return False
+
+    def _update_cooldowns(self, cooldowns: TurnCooldowns, action: Action) -> None:
+        if action.type == "normal_summon":
+            cooldowns.normal_summon_attempts += 1
+        elif action.type == "special_summon" and action.args.get("card_name") == "Swordsoul Strategist Longyuan":
+            cooldowns.longyuan_attempts += 1
+        elif action.type == "activate_effect":
+            if action.args.get("card_name") == "Swordsoul of Mo Ye":
+                cooldowns.mo_ye_effect_attempts += 1
+            if action.args.get("card_name") == "Swordsoul of Taia":
+                cooldowns.taia_effect_attempts += 1
+        elif action.type == "extra_deck_summon":
+            cooldowns.extra_deck_attempts += 1

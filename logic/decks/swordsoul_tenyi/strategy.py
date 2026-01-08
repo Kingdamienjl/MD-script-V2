@@ -9,9 +9,10 @@ from typing import Optional
 from jduel_bot.config import BotConfig
 from logic.action_queue import Action
 from logic.profile import ProfileIndex
-from logic.state_manager import Snapshot
+from logic.state_manager import Snapshot, TurnCooldowns
 from logic.strategy_base import CardSelection, Strategy
 from logic.swordsoul_planner import SwordsoulPlanner
+from logic.tenyi_extension import extend_plan_with_tenyi
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,9 @@ class SwordsoulTenyiStrategy(Strategy):
             dialog_cards=list(getattr(client, "get_dialog_card_list", lambda: [])()),
             board_state=self._safe_board_state(client),
         )
+        intents = extend_plan_with_tenyi(intents, profile_index, state)
+
+        cooldowns = getattr(client, "turn_cooldowns", None)
 
         actions: list[Action] = []
         name_to_index = {
@@ -41,6 +45,8 @@ class SwordsoulTenyiStrategy(Strategy):
                 logging.info("[PROFILE] blocked unknown card name=%s", intent.name)
                 continue
             if intent.kind == "NORMAL_SUMMON" and intent.name:
+                if isinstance(cooldowns, TurnCooldowns) and cooldowns.normal_summon_attempts > 0:
+                    continue
                 hand_index = name_to_index.get(intent.name)
                 if hand_index is None:
                     continue
@@ -52,6 +58,12 @@ class SwordsoulTenyiStrategy(Strategy):
                     )
                 )
             elif intent.kind == "ACTIVATE_FIELD_EFFECT" and intent.name:
+                if intent.name == "Swordsoul of Mo Ye" and isinstance(cooldowns, TurnCooldowns):
+                    if cooldowns.mo_ye_effect_attempts > 0:
+                        continue
+                if intent.name == "Swordsoul of Taia" and isinstance(cooldowns, TurnCooldowns):
+                    if cooldowns.taia_effect_attempts > 0:
+                        continue
                 actions.append(
                     Action(
                         type="activate_effect",
@@ -59,7 +71,23 @@ class SwordsoulTenyiStrategy(Strategy):
                         description=f"Activate effect of {intent.name}",
                     )
                 )
+            elif intent.kind == "ACTIVATE_HAND_EFFECT" and intent.name:
+                hand_index = name_to_index.get(intent.name)
+                if hand_index is None:
+                    continue
+                actions.append(
+                    Action(
+                        type="activate_hand_effect",
+                        args={"hand_index": hand_index, "card_name": intent.name},
+                        description=f"Activate {intent.name}",
+                    )
+                )
             elif intent.kind == "SPECIAL_SUMMON_FROM_HAND" and intent.name:
+                if intent.name == "Swordsoul Strategist Longyuan" and isinstance(
+                    cooldowns, TurnCooldowns
+                ):
+                    if cooldowns.longyuan_attempts > 0:
+                        continue
                 hand_index = name_to_index.get(intent.name)
                 if hand_index is None:
                     continue
@@ -71,6 +99,8 @@ class SwordsoulTenyiStrategy(Strategy):
                     )
                 )
             elif intent.kind == "EXTRA_DECK_SUMMON":
+                if isinstance(cooldowns, TurnCooldowns) and cooldowns.extra_deck_attempts > 0:
+                    continue
                 for name in intent.candidates:
                     if cfg.strict_profile and not profile_index.is_allowed(name):
                         logging.info("[PROFILE] blocked unknown card name=%s", name)

@@ -14,7 +14,7 @@ from typing import Optional, Sequence
 from jduel_bot.config import BotConfig, load_config
 from logic.action_queue import ActionQueue
 from logic.dialog_resolver import DialogButtonType, DialogResolver
-from logic.state_manager import snapshot_state
+from logic.state_manager import TurnCooldowns, snapshot_state
 from logic.strategy_registry import load_strategy
 
 
@@ -43,6 +43,7 @@ class SwordsoulDuelLogicBot:
     def __init__(self, cfg: BotConfig) -> None:
         self.cfg = cfg
         self.state = DuelState()
+        self.turn_cooldowns = TurnCooldowns()
         self.dialog_resolver = DialogResolver()
         self.action_queue = ActionQueue()
         self.profile_path = self._resolve_profile_path()
@@ -61,9 +62,25 @@ class SwordsoulDuelLogicBot:
         logging.info("Starting duel logic bot.")
 
         while True:
-            self.state.turn_count += 1
+            self._start_turn()
             self.handle_my_main_phase_1()
             time.sleep(self.cfg.action_delay_ms / 1000)
+
+    def _start_turn(self) -> None:
+        self.state.turn_count += 1
+        self.turn_cooldowns.reset_for_new_turn()
+        hand_size = self.get_hand_size()
+        lp = self.get_life_points()
+        logging.info(
+            "[TURN] n=%s phase=%s hand_size=%s lp=%s",
+            self.state.turn_count,
+            self.state.phase,
+            hand_size,
+            lp,
+        )
+        board_state = self._safe_board_state()
+        if board_state is not None:
+            self._write_turn_snapshot(board_state)
 
     def handle_my_main_phase_1(self) -> None:
         if self.is_inputting():
@@ -74,6 +91,11 @@ class SwordsoulDuelLogicBot:
 
         snapshot = snapshot_state(self)
         actions = self.strategy.plan_main_phase_1(snapshot, self, self.cfg)
+        if not actions:
+            self._handle_empty_plan()
+            return
+
+        self.turn_cooldowns.empty_ticks = 0
         logging.info(
             "[PLAN] actions=[%s]",
             ", ".join(action.description for action in actions),
@@ -81,11 +103,29 @@ class SwordsoulDuelLogicBot:
         self.action_queue.push(actions)
         self.action_queue.execute(self, self.cfg, self.dialog_resolver)
 
+    def _handle_empty_plan(self) -> None:
+        self.turn_cooldowns.empty_ticks += 1
+        if self.turn_cooldowns.empty_ticks < 2:
+            return
+        if self.turn_cooldowns.phase_advanced:
+            return
+        if self.can_we_battle() and self.has_attackers():
+            self.advance_phase("battle")
+        else:
+            self.advance_phase("end")
+        self.turn_cooldowns.phase_advanced = True
+
     def _resolve_profile_path(self) -> Path:
         deck_profile = self.cfg.decks_dir / self.cfg.deck / "profile.json"
         if deck_profile.exists():
             return deck_profile
         return self.cfg.profile_path
+
+    def _write_turn_snapshot(self, board_state: dict) -> None:
+        path = Path("replay/recorded")
+        path.mkdir(parents=True, exist_ok=True)
+        filename = path / f"turn_{self.state.turn_count}_state.json"
+        filename.write_text(json.dumps(board_state, indent=2, sort_keys=True))
 
     def is_inputting(self) -> bool:
         return False
@@ -168,6 +208,9 @@ class SwordsoulDuelLogicBot:
         _ = index
         return None
 
+    def get_life_points(self) -> int:
+        return 0
+
     def can_normal_summon(self) -> bool:
         return True
 
@@ -177,10 +220,16 @@ class SwordsoulDuelLogicBot:
     def get_free_monster_zones(self) -> int:
         return 1
 
+    def get_field_monster_count(self) -> int:
+        return 0
+
     def normal_summon_from_hand(self, hand_index: int) -> None:
         self.state.last_used_card_name = self._get_known_hand_name(hand_index)
 
     def special_summon_from_hand(self, hand_index: int) -> None:
+        self.state.last_used_card_name = self._get_known_hand_name(hand_index)
+
+    def activate_effect_from_hand(self, hand_index: int) -> None:
         self.state.last_used_card_name = self._get_known_hand_name(hand_index)
 
     def activate_effect_from_field(self, field_index: int) -> None:
@@ -194,6 +243,12 @@ class SwordsoulDuelLogicBot:
 
     def advance_phase(self, phase: str) -> None:
         self.state.phase = phase
+
+    def can_we_battle(self) -> bool:
+        return False
+
+    def has_attackers(self) -> bool:
+        return False
 
     def _get_known_hand_name(self, hand_index: int) -> Optional[str]:
         try:

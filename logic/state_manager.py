@@ -18,6 +18,27 @@ class Snapshot:
     can_normal_summon: bool
     free_spell_trap_zones: int
     free_monster_zones: int
+    monster_count: int
+
+
+@dataclass
+class TurnCooldowns:
+    normal_summon_attempts: int = 0
+    longyuan_attempts: int = 0
+    mo_ye_effect_attempts: int = 0
+    taia_effect_attempts: int = 0
+    extra_deck_attempts: int = 0
+    empty_ticks: int = 0
+    phase_advanced: bool = False
+
+    def reset_for_new_turn(self) -> None:
+        self.normal_summon_attempts = 0
+        self.longyuan_attempts = 0
+        self.mo_ye_effect_attempts = 0
+        self.taia_effect_attempts = 0
+        self.extra_deck_attempts = 0
+        self.empty_ticks = 0
+        self.phase_advanced = False
 
 
 def _call_if_available(obj: object, attr: str, default):
@@ -60,12 +81,14 @@ def snapshot_state(client: object) -> Snapshot:
     can_normal_summon = bool(_call_if_available(client, "can_normal_summon", True))
     free_spell_trap_zones = _get_free_zones(client, "get_free_spell_trap_zones")
     free_monster_zones = _get_free_zones(client, "get_free_monster_zones")
+    monster_count = int(_call_if_available(client, "get_field_monster_count", 0))
 
     return Snapshot(
         hand=hand_cards,
         can_normal_summon=can_normal_summon,
         free_spell_trap_zones=free_spell_trap_zones,
         free_monster_zones=free_monster_zones,
+        monster_count=monster_count,
     )
 
 
