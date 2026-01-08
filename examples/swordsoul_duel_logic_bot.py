@@ -15,6 +15,7 @@ from jduel_bot.config import BotConfig, load_config
 from logic.action_queue import ActionQueue
 from logic.plan_executor import PlanExecutor
 from logic.context_builder import build_context
+from logic.dialog_manager import DialogManager
 from logic.dialog_resolver import DialogButtonType, DialogResolver
 from logic.loader import load_ruleset
 from logic.profile import ProfileIndex
@@ -48,6 +49,7 @@ class SwordsoulDuelLogicBot:
         self.state = DuelState()
         self.turn_cooldowns = TurnCooldowns()
         self.dialog_resolver = DialogResolver()
+        self.dialog_manager = DialogManager()
         self.action_queue = ActionQueue()
         self.plan_executor = PlanExecutor(self.dialog_resolver)
         self.ruleset = load_ruleset(cfg.ruleset)
@@ -89,6 +91,9 @@ class SwordsoulDuelLogicBot:
 
     def handle_my_main_phase_1(self) -> None:
         if self.is_inputting():
+            handled = self.dialog_manager.handle_if_present(self)
+            if handled:
+                return
             result = self.dialog_resolver.resolve(self)
             if result == "bailout":
                 return
