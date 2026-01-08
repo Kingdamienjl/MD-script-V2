@@ -16,10 +16,9 @@ from logic.action_queue import ActionQueue
 from logic.plan_executor import PlanExecutor
 from logic.context_builder import build_context
 from logic.dialog_resolver import DialogButtonType, DialogResolver
+from logic.loader import load_ruleset
 from logic.profile import ProfileIndex
-from logic.ruleset_loader import load_ruleset
 from logic.state_manager import TurnCooldowns, snapshot_state
-from logic.strategy_registry import StrategyRegistry
 
 
 class ActivateConfirmMode(str, Enum):
@@ -53,9 +52,8 @@ class SwordsoulDuelLogicBot:
         self.plan_executor = PlanExecutor(self.dialog_resolver)
         self.ruleset = load_ruleset(cfg.ruleset)
         self.profile_index = ProfileIndex(self.ruleset.profile)
-        self.rules_registry = self.ruleset.registry
         self.profile_path = Path("logic") / "decks" / self.ruleset.name / "profile.json"
-        self.strategy = self._select_strategy(self.rules_registry)
+        self.actions_this_turn = 0
 
     def run(self) -> None:
         _configure_logging()
@@ -71,15 +69,6 @@ class SwordsoulDuelLogicBot:
             self._start_turn()
             self.handle_my_main_phase_1()
             time.sleep(self.cfg.action_delay_ms / 1000)
-
-    def _select_strategy(self, registry: StrategyRegistry):
-        from logic.decks.swordsoul_tenyi.strategy import SwordsoulTenyiStrategy
-
-        return SwordsoulTenyiStrategy(
-            name="default",
-            deck_name=self.ruleset.name,
-            profile=self.ruleset.profile,
-        )
 
     def _start_turn(self) -> None:
         self.state.turn_count += 1
@@ -112,7 +101,7 @@ class SwordsoulDuelLogicBot:
         ctx["monster_count"] = snapshot.monster_count
         ctx["hand_names"] = self._merge_hand_names(ctx, snapshot)
 
-        actions = self.strategy.plan_main_phase_1(snapshot, ctx, self.cfg)
+        actions = self.ruleset.plan_main_phase_1(ctx, snapshot, self.cfg)
         if not actions:
             self._handle_empty_plan()
             return
