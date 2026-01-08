@@ -75,8 +75,7 @@ class SwordsoulDuelLogicBot:
         snapshot = snapshot_state(self)
         actions = self.strategy.plan_main_phase_1(snapshot, self, self.cfg)
         logging.info(
-            "[PLAN] %s actions: %s",
-            len(actions),
+            "[PLAN] actions=[%s]",
             ", ".join(action.description for action in actions),
         )
         self.action_queue.push(actions)
@@ -179,6 +178,9 @@ class SwordsoulDuelLogicBot:
         return 1
 
     def normal_summon_from_hand(self, hand_index: int) -> None:
+        self.state.last_used_card_name = self._get_known_hand_name(hand_index)
+
+    def special_summon_from_hand(self, hand_index: int) -> None:
         self.state.last_used_card_name = self._get_known_hand_name(hand_index)
 
     def activate_effect_from_field(self, field_index: int) -> None:

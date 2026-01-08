@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Optional
 
 from jduel_bot.config import BotConfig
 from logic.action_queue import Action
 from logic.profile import ProfileIndex
 from logic.state_manager import Snapshot
 from logic.strategy_base import CardSelection, Strategy
+from logic.swordsoul_planner import SwordsoulPlanner
 
 
 @dataclass(frozen=True)
@@ -22,37 +23,58 @@ class SwordsoulTenyiStrategy(Strategy):
     def plan_main_phase_1(
         self, state: Snapshot, client: object, cfg: BotConfig
     ) -> list[Action]:
-        actions: list[Action] = []
         profile_index = ProfileIndex(self.profile)
-        strict_profile = cfg.strict_profile
+        planner = SwordsoulPlanner(profile_index)
+        hand_names = self._collect_hand_names(state, client)
+        intents = planner.plan(
+            hand_names,
+            dialog_cards=list(getattr(client, "get_dialog_card_list", lambda: [])()),
+            board_state=self._safe_board_state(client),
+        )
 
-        if state.can_normal_summon and state.free_monster_zones > 0:
-            starter_pick = self._pick_card_by_preference(
-                state.hand,
-                ["Swordsoul of Mo Ye", "Swordsoul of Taia"],
-                profile_index,
-                strict_profile,
-            )
-            if starter_pick:
-                hand_index, card_name = starter_pick
+        actions: list[Action] = []
+        name_to_index = {
+            card.name: card.index for card in state.hand if card.name is not None
+        }
+        for intent in intents:
+            if intent.name and cfg.strict_profile and not profile_index.is_allowed(intent.name):
+                logging.info("[PROFILE] blocked unknown card name=%s", intent.name)
+                continue
+            if intent.kind == "NORMAL_SUMMON" and intent.name:
+                hand_index = name_to_index.get(intent.name)
+                if hand_index is None:
+                    continue
                 actions.append(
                     Action(
                         type="normal_summon",
-                        args={"hand_index": hand_index, "card_name": card_name},
-                        description=f"Normal summon {card_name}",
+                        args={"hand_index": hand_index, "card_name": intent.name},
+                        description=f"Normal summon {intent.name}",
                     )
                 )
+            elif intent.kind == "ACTIVATE_FIELD_EFFECT" and intent.name:
                 actions.append(
                     Action(
                         type="activate_effect",
-                        args={"field_index": 0, "card_name": card_name},
-                        description=f"Activate effect of {card_name}",
+                        args={"field_index": 0, "card_name": intent.name},
+                        description=f"Activate effect of {intent.name}",
                     )
                 )
-                extra_names = profile_index.extra_deck_priority
-                if strict_profile:
-                    extra_names = tuple(profile_index.filter_allowed(extra_names))
-                for name in extra_names:
+            elif intent.kind == "SPECIAL_SUMMON_FROM_HAND" and intent.name:
+                hand_index = name_to_index.get(intent.name)
+                if hand_index is None:
+                    continue
+                actions.append(
+                    Action(
+                        type="special_summon",
+                        args={"hand_index": hand_index, "card_name": intent.name},
+                        description=f"Special summon {intent.name}",
+                    )
+                )
+            elif intent.kind == "EXTRA_DECK_SUMMON":
+                for name in intent.candidates:
+                    if cfg.strict_profile and not profile_index.is_allowed(name):
+                        logging.info("[PROFILE] blocked unknown card name=%s", name)
+                        continue
                     actions.append(
                         Action(
                             type="extra_deck_summon",
@@ -60,34 +82,18 @@ class SwordsoulTenyiStrategy(Strategy):
                             description=f"Extra deck summon {name}",
                         )
                     )
-                return actions
-
-        if state.free_spell_trap_zones > 0:
-            backrow_pick = self._pick_card_by_preference(
-                state.hand,
-                [],
-                profile_index,
-                strict_profile,
-                include_backrow=True,
-            )
-            if backrow_pick:
-                hand_index, card_name = backrow_pick
+                    break
+            elif intent.kind == "SET_BACKROW" and intent.name:
+                hand_index = name_to_index.get(intent.name)
+                if hand_index is None:
+                    continue
                 actions.append(
                     Action(
                         type="set_spell_trap",
-                        args={"hand_index": hand_index, "card_name": card_name},
-                        description=f"Set {card_name}",
+                        args={"hand_index": hand_index, "card_name": intent.name},
+                        description=f"Set {intent.name}",
                     )
                 )
-                return actions
-
-        actions.append(
-            Action(
-                type="advance_phase",
-                args={"phase": "battle"},
-                description="Advance to battle phase",
-            )
-        )
         return actions
 
     def on_dialog(
@@ -110,31 +116,31 @@ class SwordsoulTenyiStrategy(Strategy):
             return None
         return [CardSelection(index=allowed_indices[0], button="left")]
 
-    def _pick_card_by_preference(
-        self,
-        hand,
-        preferred_names: Iterable[str],
-        profile_index: ProfileIndex,
-        strict_profile: bool,
-        include_backrow: bool = False,
-    ) -> Optional[tuple[int, str]]:
-        allowed = profile_index.allowed_names
-        named_cards = [card for card in hand if card.name]
-        for card in named_cards:
-            if strict_profile and card.name not in allowed:
-                logging.info("[PROFILE] blocked unknown card name=%s", card.name)
-        for name in preferred_names:
-            for card in named_cards:
-                if card.name == name and profile_index.is_allowed(name):
-                    return card.index, card.name
-        for card in named_cards:
-            if strict_profile:
-                if card.name in allowed:
-                    return card.index, card.name
-            else:
-                return card.index, card.name
-        if include_backrow and strict_profile:
-            return None
+    def _collect_hand_names(self, state: Snapshot, client: object) -> list[str]:
+        names = [card.name for card in state.hand if card.name]
+        if names:
+            return names
+        board_state = self._safe_board_state(client)
+        if not board_state:
+            return []
+        hand = board_state.get("hand") if isinstance(board_state, dict) else None
+        if isinstance(hand, list):
+            extracted = []
+            for entry in hand:
+                if isinstance(entry, dict) and "name" in entry:
+                    extracted.append(entry["name"])
+                elif isinstance(entry, str):
+                    extracted.append(entry)
+            return extracted
+        return []
+
+    def _safe_board_state(self, client: object) -> dict | None:
+        getter = getattr(client, "get_board_state", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                return None
         return None
 
 
