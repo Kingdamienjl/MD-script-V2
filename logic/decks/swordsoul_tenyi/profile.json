@@ -1,0 +1,25 @@
+{
+  "starters": [
+    "Swordsoul of Mo Ye",
+    "Swordsoul Strategist Longyuan",
+    "Swordsoul of Taia"
+  ],
+  "extenders": [
+    "Tenyi Spirit - Ashuna",
+    "Tenyi Spirit - Vishuda",
+    "Tenyi Spirit - Adhara"
+  ],
+  "spells": [
+    "Swordsoul Emergence",
+    "Heavenly Dragon Circle"
+  ],
+  "traps": [
+    "Swordsoul Blackout"
+  ],
+  "extra_deck_priority": [
+    "Swordsoul Grandmaster - Chixiao",
+    "Baronne de Fleur",
+    "Baxia, Brightness of the Yang Zing",
+    "Yazi, Evil of the Yang Zing"
+  ]
+}
