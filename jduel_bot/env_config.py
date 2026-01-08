@@ -18,8 +18,9 @@ class BotConfig:
     zmq_address: str
     timeout_ms: int
     max_retries: int
-    dialog_click_delay: float
-    action_delay: float
+    dialog_click_delay_ms: int
+    action_delay_ms: int
+    dialog_max_cycles: int
     stuck_dialog_cycle_limit: int
     failsafe_action_limit: int
     failsafe_turn_limit: int
@@ -28,6 +29,7 @@ class BotConfig:
     screenshot_dir: Path
     log_file: Path
     random_seed: Optional[int]
+    screenshot_on_error: bool
 
 
 def _parse_int(value: Optional[str], default: int) -> int:
@@ -48,15 +50,6 @@ def _parse_optional_int(value: Optional[str]) -> Optional[int]:
         return None
 
 
-def _parse_float(value: Optional[str], default: float) -> float:
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def _parse_bool(value: Optional[str], default: bool) -> bool:
     if value is None:
         return default
@@ -73,14 +66,16 @@ def load_config() -> BotConfig:
     zmq_address = os.getenv("BOT_ZMQ_ADDRESS", "tcp://127.0.0.1:5555")
     timeout_ms = _parse_int(os.getenv("BOT_TIMEOUT_MS"), 2000)
     max_retries = _parse_int(os.getenv("BOT_MAX_RETRIES"), 3)
-    dialog_click_delay = _parse_float(os.getenv("BOT_DIALOG_CLICK_DELAY"), 0.4)
-    action_delay = _parse_float(os.getenv("BOT_ACTION_DELAY"), 0.2)
+    dialog_click_delay_ms = _parse_int(os.getenv("BOT_DIALOG_CLICK_DELAY_MS"), 400)
+    action_delay_ms = _parse_int(os.getenv("BOT_ACTION_DELAY_MS"), 200)
+    dialog_max_cycles = _parse_int(os.getenv("BOT_DIALOG_MAX_CYCLES"), 12)
     stuck_dialog_cycle_limit = _parse_int(
         os.getenv("BOT_STUCK_DIALOG_CYCLE_LIMIT"), 8
     )
     failsafe_action_limit = _parse_int(os.getenv("BOT_FAILSAFE_ACTION_LIMIT"), 120)
     failsafe_turn_limit = _parse_int(os.getenv("BOT_FAILSAFE_TURN_LIMIT"), 50)
     failsafe_enabled = _parse_bool(os.getenv("BOT_FAILSAFE_ENABLED"), True)
+    screenshot_on_error = _parse_bool(os.getenv("BOT_SCREENSHOT_ON_ERROR"), False)
     dump_dir = Path(os.getenv("BOT_DUMP_DIR", "./bot_dumps")).expanduser()
     screenshot_dir = Path(
         os.getenv("BOT_SCREENSHOT_DIR", "./bot_screenshots")
@@ -98,8 +93,9 @@ def load_config() -> BotConfig:
         zmq_address=zmq_address,
         timeout_ms=timeout_ms,
         max_retries=max_retries,
-        dialog_click_delay=dialog_click_delay,
-        action_delay=action_delay,
+        dialog_click_delay_ms=dialog_click_delay_ms,
+        action_delay_ms=action_delay_ms,
+        dialog_max_cycles=dialog_max_cycles,
         stuck_dialog_cycle_limit=stuck_dialog_cycle_limit,
         failsafe_action_limit=failsafe_action_limit,
         failsafe_turn_limit=failsafe_turn_limit,
@@ -108,4 +104,5 @@ def load_config() -> BotConfig:
         screenshot_dir=screenshot_dir,
         log_file=log_file,
         random_seed=random_seed,
+        screenshot_on_error=screenshot_on_error,
     )
