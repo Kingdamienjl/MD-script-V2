@@ -30,6 +30,9 @@ class TurnCooldowns:
     extra_deck_attempts: int = 0
     empty_ticks: int = 0
     phase_advanced: bool = False
+    stuck_dialog_cycles: int = 0
+    last_dialog_fingerprint: Optional[str] = None
+    dialog_repeat_count: int = 0
 
     def reset_for_new_turn(self) -> None:
         self.normal_summon_attempts = 0
@@ -39,6 +42,9 @@ class TurnCooldowns:
         self.extra_deck_attempts = 0
         self.empty_ticks = 0
         self.phase_advanced = False
+        self.stuck_dialog_cycles = 0
+        self.last_dialog_fingerprint = None
+        self.dialog_repeat_count = 0
 
 
 def _call_if_available(obj: object, attr: str, default):
