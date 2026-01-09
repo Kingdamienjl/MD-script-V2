@@ -1,33 +1,42 @@
 {
   "deck_name": "swordsoul_tenyi",
-  "version": "0.1.0",
-  "main": [
-    { "name": "Swordsoul of Mo Ye", "min": 0, "max": 3, "priority": 100 },
-    { "name": "Swordsoul Emergence", "min": 0, "max": 3, "priority": 95 },
-    { "name": "Incredible Ecclesia, the Virtuous", "min": 0, "max": 3, "priority": 90 },
-    { "name": "Tenyi Spirit - Ashuna", "min": 0, "max": 3, "priority": 85 },
-    { "name": "Swordsoul Strategist Longyuan", "min": 0, "max": 3, "priority": 80 },
-    { "name": "Swordsoul of Taia", "min": 0, "max": 2, "priority": 70 },
-    { "name": "Tenyi Spirit - Vishuda", "min": 0, "max": 3, "priority": 60 },
-    { "name": "Tenyi Spirit - Adhara", "min": 0, "max": 3, "priority": 55 },
-    { "name": "Tenyi Spirit - Shthana", "min": 0, "max": 1, "priority": 40 },
-    { "name": "Heavenly Dragon Circle", "min": 0, "max": 2, "priority": 45 },
-    { "name": "Swordsoul Blackout", "min": 0, "max": 1, "priority": 35 },
-    { "name": "Called by the Grave", "min": 0, "max": 2, "priority": 30 },
-    { "name": "Crossout Designator", "min": 0, "max": 2, "priority": 25 }
+  "version": "0.1",
+  "dialog_pick_priority": [
+    "Swordsoul Strategist Longyuan",
+    "Swordsoul of Mo Ye",
+    "Swordsoul of Taia",
+    "Incredible Ecclesia, the Virtuous",
+    "Swordsoul Emergence",
+    "Vessel for the Dragon Cycle",
+    "Heavenly Dragon Circle",
+    "Tenyi Spirit - Ashuna",
+    "Tenyi Spirit - Vishuda",
+    "Tenyi Spirit - Adhara",
+    "Tenyi Spirit - Shthana",
+    "Swordsoul Blackout",
+    "Ash Blossom & Joyous Spring",
+    "Maxx \"C\"",
+    "Effect Veiler",
+    "Infinite Impermanence"
   ],
-  "extra": [
-    { "name": "Swordsoul Grandmaster - Chixiao", "min": 0, "max": 2, "priority": 100 },
-    { "name": "Swordsoul Supreme Sovereign - Chengying", "min": 0, "max": 1, "priority": 90 },
-    { "name": "Baronne de Fleur", "min": 0, "max": 1, "priority": 80 },
-    { "name": "Baxia, Brightness of the Yang Zing", "min": 0, "max": 1, "priority": 70 },
-    { "name": "Yazi, Evil of the Yang Zing", "min": 0, "max": 1, "priority": 60 },
-    { "name": "Monk of the Tenyi", "min": 0, "max": 1, "priority": 50 },
-    { "name": "Shaman of the Tenyi", "min": 0, "max": 1, "priority": 40 },
-    { "name": "Dragite", "min": 0, "max": 1, "priority": 30 }
-  ],
-  "notes": [
-    "Going first: prioritize Mo Ye/Ecclesia into Chixiao + Chengying with Blackout for interaction.",
-    "Going second: prioritize Vishuda/Ashuna lines and generic breakers before committing to normal summon."
-  ]
+  "cards": {
+    "Swordsoul of Mo Ye": { "role": ["starter"] },
+    "Swordsoul of Taia": { "role": ["starter"] },
+    "Swordsoul Strategist Longyuan": { "role": ["extender", "finisher"] },
+    "Incredible Ecclesia, the Virtuous": { "role": ["starter", "extender"] },
+    "Swordsoul Emergence": { "role": ["search"] },
+    "Swordsoul Blackout": { "role": ["interaction"] },
+    "Vessel for the Dragon Cycle": { "role": ["setup", "search"] },
+    "Heavenly Dragon Circle": { "role": ["search", "protection"] },
+    "Tenyi Spirit - Ashuna": { "role": ["extender"] },
+    "Tenyi Spirit - Vishuda": { "role": ["extender"] },
+    "Tenyi Spirit - Adhara": { "role": ["extender"] },
+    "Tenyi Spirit - Shthana": { "role": ["extender"] }
+  },
+  "notes": {
+    "todo": [
+      "Replace this profile with your exact in-game deck list (names must match the bot's detected names).",
+      "Add explicit per-dialog rules once we tag dialogs by type (discard/select/banish/etc)."
+    ]
+  }
 }

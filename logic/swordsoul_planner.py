@@ -1,63 +1,20 @@
-"""Minimal Swordsoul opener planner."""
+"""
+Swordsoul planner (placeholder).
+
+This module will eventually:
+- read your hand + board state
+- choose an opening line (Mo Ye, Taia, Longyuan, Ecclesia, Tenyi start, etc.)
+- emit an ordered list of Actions
+
+Right now it exists mainly to keep imports stable while we iterate.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from typing import List
 
-from logic.profile import ProfileIndex
-
-
-@dataclass(frozen=True)
-class Intent:
-    kind: str
-    name: Optional[str] = None
-    candidates: tuple[str, ...] = ()
-
-    def describe(self) -> str:
-        if self.name:
-            return f"{self.kind}({self.name})"
-        if self.candidates:
-            return f"{self.kind}({', '.join(self.candidates)})"
-        return self.kind
+from logic.strategy_registry import Action
 
 
-class SwordsoulPlanner:
-    def __init__(self, profile_index: ProfileIndex) -> None:
-        self.profile_index = profile_index
-
-    def plan(self, ctx: dict) -> list[Intent]:
-        intents: list[Intent] = []
-        hand = list(ctx.get("hand_names", []))
-
-        starter = self._pick_first_in_priority(hand, self.profile_index.main_priority)
-        if starter:
-            intents.append(Intent("NORMAL_SUMMON", starter))
-            intents.append(Intent("ACTIVATE_FIELD_EFFECT", starter))
-
-        longyuan_name = "Swordsoul Strategist Longyuan"
-        if longyuan_name in hand and self.profile_index.is_allowed(longyuan_name):
-            discardable = self._pick_first_in_priority(
-                [name for name in hand if name != longyuan_name],
-                self.profile_index.main_priority,
-            )
-            if discardable:
-                intents.append(Intent("SPECIAL_SUMMON_FROM_HAND", longyuan_name))
-
-        if self.profile_index.extra_priority:
-            intents.append(
-                Intent(
-                    "EXTRA_DECK_SUMMON",
-                    candidates=self.profile_index.extra_priority,
-                )
-            )
-
-        return intents
-
-    def _pick_first_in_priority(
-        self, hand: list[str], priority_list: tuple[str, ...]
-    ) -> Optional[str]:
-        for name in priority_list:
-            if name in hand:
-                return name
-        return None
+def plan_default_turn(profile: dict, state: dict) -> List[Action]:
+    return [Action(type="pass", description="planner: not implemented -> pass")]

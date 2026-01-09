@@ -1,83 +1,80 @@
-"""Shared configuration for bot runtime settings."""
+"""
+Bot configuration (environment driven)
+
+Codex/GitHub secrets usually supply only KEY=VALUE pairs. This module reads those keys
+and provides sane defaults for local runs.
+
+Important env vars:
+- BOT_ZMQ_ADDRESS: ZMQ endpoint JDuelBotClient connects to (default tcp://127.0.0.1:5555)
+- BOT_RULESET: deck/ruleset folder name (default swordsoul_tenyi)
+- BOT_STRATEGY: strategy variant name passed to deck's get_strategy() (default default)
+- BOT_DECKS_DIR: where deck folders live (default logic/decks)
+- BOT_PROFILE_PATH: legacy fallback profile path (default logic/profile.json)
+- BOT_LOG_LEVEL: INFO/DEBUG (default INFO)
+"""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
+
+from jduel_bot.jduel_bot_enums import ActivateConfirmMode
 
 
-@dataclass(frozen=True)
-class BotConfig:
-    action_delay_ms: int
-    dialog_click_delay_ms: int
-    dialog_max_cycles: int
-    dump_dir: Path
-    max_actions_per_tick: int
-    profile_path: Path
-    strict_profile: bool
-    deck: str
-    decks_dir: Path
-    strategy: str
-    ruleset: str
-
-
-def _parse_int(value: str | None, default: int) -> int:
-    if value is None:
+def _get_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
         return default
     try:
-        return int(value)
+        return int(raw)
     except ValueError:
         return default
 
 
-def _parse_bool(value: str | None, default: bool) -> bool:
-    if value is None:
+def _get_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
         return default
-    lowered = value.strip().lower()
-    if lowered in {"1", "true", "yes", "y", "on"}:
-        return True
-    if lowered in {"0", "false", "no", "n", "off"}:
-        return False
-    return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
 
 
-def _default_profile_path(decks_dir: Path, ruleset: str) -> Path:
-    deck_profile = decks_dir / ruleset / "profile.json"
-    if deck_profile.exists():
-        return deck_profile
-    return Path("logic/deck_profile.json")
+@dataclass(frozen=True)
+class BotConfig:
+    zmq_address: str = "tcp://127.0.0.1:5555"
+    ruleset: str = "swordsoul_tenyi"
+    strategy: str = "default"
+    decks_dir: str = "logic/decks"
+    legacy_profile_path: str = "logic/profile.json"
 
+    # runtime tuning
+    timeout_ms: int = 1200
+    tick_s: float = 0.25
+    action_delay_s: float = 0.15
 
-def load_config() -> BotConfig:
-    """Load configuration from environment variables."""
-    action_delay_ms = _parse_int(os.getenv("BOT_ACTION_DELAY_MS"), 120)
-    dialog_click_delay_ms = _parse_int(os.getenv("BOT_DIALOG_CLICK_DELAY_MS"), 120)
-    dialog_max_cycles = _parse_int(os.getenv("BOT_DIALOG_MAX_CYCLES"), 12)
-    dump_dir = Path(os.getenv("BOT_DUMP_DIR", "artifacts")).expanduser()
-    max_actions_per_tick = _parse_int(os.getenv("BOT_MAX_ACTIONS_PER_TICK"), 2)
-    decks_dir = Path(os.getenv("BOT_DECKS_DIR", "logic/decks")).expanduser()
-    strict_profile = _parse_bool(os.getenv("BOT_STRICT_PROFILE"), True)
-    strategy = os.getenv("BOT_STRATEGY", "default")
-    ruleset = os.getenv("BOT_RULESET", "swordsoul_tenyi")
-    profile_default = _default_profile_path(decks_dir, ruleset)
-    profile_path = Path(os.getenv("BOT_PROFILE_PATH", str(profile_default))).expanduser()
-    deck = os.getenv("BOT_DECK", ruleset)
+    # activation prompt behavior
+    activate_confirm: str = "on"  # on|off|default
 
-    dump_dir.mkdir(parents=True, exist_ok=True)
-    profile_path.parent.mkdir(parents=True, exist_ok=True)
-    decks_dir.mkdir(parents=True, exist_ok=True)
+    @classmethod
+    def from_env(cls) -> "BotConfig":
+        return cls(
+            zmq_address=os.getenv("BOT_ZMQ_ADDRESS", cls.zmq_address),
+            ruleset=os.getenv("BOT_RULESET", cls.ruleset),
+            strategy=os.getenv("BOT_STRATEGY", cls.strategy),
+            decks_dir=os.getenv("BOT_DECKS_DIR", cls.decks_dir),
+            legacy_profile_path=os.getenv("BOT_PROFILE_PATH", cls.legacy_profile_path),
+            timeout_ms=_get_int("BOT_TIMEOUT_MS", cls.timeout_ms),
+            tick_s=_get_float("BOT_TICK_S", cls.tick_s),
+            action_delay_s=_get_float("BOT_ACTION_DELAY_S", cls.action_delay_s),
+            activate_confirm=os.getenv("BOT_ACTIVATE_CONFIRM", cls.activate_confirm).lower(),
+        )
 
-    return BotConfig(
-        action_delay_ms=action_delay_ms,
-        dialog_click_delay_ms=dialog_click_delay_ms,
-        dialog_max_cycles=dialog_max_cycles,
-        dump_dir=dump_dir,
-        max_actions_per_tick=max_actions_per_tick,
-        profile_path=profile_path,
-        strict_profile=strict_profile,
-        deck=deck,
-        decks_dir=decks_dir,
-        strategy=strategy,
-        ruleset=ruleset,
-    )
+    def activation_confirm_mode(self) -> ActivateConfirmMode:
+        v = (self.activate_confirm or "default").lower().strip()
+        if v in ("on", "true", "1", "yes"):
+            return ActivateConfirmMode.On
+        if v in ("off", "false", "0", "no"):
+            return ActivateConfirmMode.Off
+        return ActivateConfirmMode.Default
