@@ -50,6 +50,22 @@ def _validate_cards(cards: Dict[str, Any]) -> None:
                 raise ValueError(f"Card entry for {name} {key} must be numeric.")
 
 
+def build_cards_by_id(profile: Dict[str, Any]) -> Dict[int, str]:
+    cards = profile.get("cards", {})
+    if not isinstance(cards, dict):
+        return {}
+    mapping: Dict[int, str] = {}
+    for name, data in cards.items():
+        if not isinstance(data, dict):
+            continue
+        card_id = data.get("id")
+        if isinstance(card_id, int):
+            mapping[card_id] = str(name)
+        elif isinstance(card_id, str) and card_id.isdigit():
+            mapping[int(card_id)] = str(name)
+    return mapping
+
+
 def validate_profile(profile: Dict[str, Any]) -> None:
     if not isinstance(profile.get("deck_name"), str):
         raise ValueError("Profile missing deck_name.")
@@ -74,6 +90,7 @@ def load_profile(path: str) -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("Profile must be a JSON object")
     validate_profile(data)
+    data["cards_by_id"] = build_cards_by_id(data)
     return data
 
 
@@ -199,3 +216,6 @@ class DeckProfile:
             if isinstance(data, dict) and isinstance(data.get("count"), int):
                 counts[str(name)] = data["count"]
         return counts
+
+    def cards_by_id(self) -> Dict[int, str]:
+        return build_cards_by_id(self.profile)

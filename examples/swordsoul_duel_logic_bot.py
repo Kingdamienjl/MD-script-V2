@@ -28,6 +28,8 @@ from jduel_bot.jduel_bot_client import JDuelBotClient
 from jduel_bot.jduel_bot_enums import Phase
 
 from logic.dialog_resolver import DialogResolver
+from logic.hand_reader import read_hand
+from logic.profile import ProfileIndex
 from logic.strategy_registry import Action, load_strategy
 
 # Optional (repo may already provide these)
@@ -233,6 +235,7 @@ def main() -> int:
 
     dump_debug_info_once(client)
 
+    profile_index = ProfileIndex.from_deck(cfg.ruleset, cfg.decks_dir, cfg.legacy_profile_path)
     strategy = load_strategy(
         deck_name=cfg.ruleset,
         strategy_name=cfg.strategy,
@@ -241,6 +244,17 @@ def main() -> int:
     )
     dialog_resolver = DialogResolver(max_repeat=cfg.dialog_max_repeat)
     cooldowns = TurnCooldowns()
+
+    hand_snapshot = read_hand(client, profile_index.profile)
+    unknown_ids = sorted(
+        {
+            card.card_id
+            for card in hand_snapshot
+            if card.card_id is not None and card.name == "unknown"
+        }
+    )
+    if unknown_ids:
+        LOG.warning("[HAND] unknown_card_ids=%s", unknown_ids)
 
     last_turn: Optional[int] = None
 
