@@ -68,7 +68,13 @@ def parse_decklist(path: Path) -> list[str]:
 
 def resolve_decklists(decklists: list[str], repo_root: Path) -> list[Path]:
     if decklists:
-        return [Path(path) for path in decklists]
+        resolved = []
+        for path in decklists:
+            candidate = Path(path)
+            if not candidate.is_absolute():
+                candidate = repo_root / candidate
+            resolved.append(candidate)
+        return resolved
     candidates = [repo_root / name for name in DEFAULT_DECKLISTS]
     return [path for path in candidates if path.exists()]
 
@@ -114,6 +120,8 @@ def main() -> int:
         )
 
     profile_path = Path(args.profile)
+    if not profile_path.is_absolute():
+        profile_path = repo_root / profile_path
     updated_profile = build_profile(decklists, profile_path)
     profile_path.write_text(json.dumps(updated_profile, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"Updated {profile_path} using {', '.join(str(p) for p in decklists)}")
