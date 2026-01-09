@@ -20,17 +20,25 @@ import os
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from jduel_bot.config import BotConfig
 from jduel_bot.jduel_bot_client import JDuelBotClient
+codex/create-script-to-generate-deck-profile-rknkyi
+from jduel_bot.jduel_bot_enums import Phase
+
 from jduel_bot.jduel_bot_enums import (
     ActivateConfirmMode,
     CardSelection,
     DialogButtonType,
     Phase,
 )
+main
 
+from logic.dialog_resolver import DialogResolver
+from logic.hand_reader import read_hand
+from logic.plan_executor import PlanExecutor
 from logic.profile import ProfileIndex
 from logic.strategy_registry import Action, load_strategy
 
@@ -112,6 +120,7 @@ def _try(label: str, fn, *args, **kwargs):
         LOG.warning("[ACTION FAIL] %s err=%s", label, exc)
         return None
 
+ codex/create-script-to-generate-deck-profile-rknkyi
 
 def _set_confirm_mode(client: JDuelBotClient, cfg: BotConfig) -> None:
     mode = cfg.activation_confirm_mode()
@@ -257,6 +266,7 @@ def _resolve_if_inputting(
     _try("cancel_activation_prompts", client.cancel_activation_prompts)
 
 
+ main
 def _execute_actions(client: JDuelBotClient, cfg: BotConfig, actions: list[Action]) -> None:
     for action in actions:
         t = action.type
@@ -316,18 +326,13 @@ def _execute_actions(client: JDuelBotClient, cfg: BotConfig, actions: list[Actio
 def _handle_my_main_phase_1(
     client: JDuelBotClient,
     cfg: BotConfig,
+    strategy,
+    state: dict,
+    hand,
+    executor: PlanExecutor,
 ) -> None:
-    state = snapshot_state(client) or {}
-
-    strategy = load_strategy(
-        deck_name=cfg.ruleset,
-        strategy_name=cfg.strategy,
-        decks_dir=cfg.decks_dir,
-        profile_path=cfg.legacy_profile_path,
-    )
-
     try:
-        actions = strategy.plan_main_phase_1(state, client, cfg)
+        actions = strategy.plan_main_phase_1(state, hand, client, cfg)
     except Exception:
         LOG.error("strategy.plan_main_phase_1 crashed:\n%s", traceback.format_exc())
         actions = [Action(type="pass", args={}, description="Fallback pass after strategy crash")]
@@ -335,7 +340,7 @@ def _handle_my_main_phase_1(
     if not actions:
         actions = [Action(type="pass", args={}, description="No actions planned -> pass")]
 
-    _execute_actions(client, cfg, actions)
+    executor.execute(actions, client, cfg)
 
 
 def main() -> int:
@@ -345,13 +350,50 @@ def main() -> int:
     LOG.info('"Swordsoul Duel Logic Bot" has been started...')
     LOG.info("Using address: %s", cfg.zmq_address)
 
+    deck_profile_path = Path(cfg.decks_dir) / cfg.ruleset / "profile.json"
+    if deck_profile_path.exists():
+        profile_path_used = deck_profile_path
+    else:
+        profile_path_used = Path(cfg.legacy_profile_path)
+
+    LOG.info(
+        "[CONFIG] ruleset=%s strategy=%s decks_dir=%s confirm_mode=%s profile_path=%s",
+        cfg.ruleset,
+        cfg.strategy,
+        cfg.decks_dir,
+        cfg.confirm_mode,
+        profile_path_used,
+    )
+
     client = JDuelBotClient(address=cfg.zmq_address, timeout_ms=cfg.timeout_ms)
     LOG.info("[ZMQ] Connected to %s", cfg.zmq_address)
 
     dump_debug_info_once(client)
 
     profile_index = ProfileIndex.from_deck(cfg.ruleset, cfg.decks_dir, cfg.legacy_profile_path)
+    strategy = load_strategy(
+        deck_name=cfg.ruleset,
+        strategy_name=cfg.strategy,
+        decks_dir=cfg.decks_dir,
+        profile_path=cfg.legacy_profile_path,
+    )
+    LOG.info("[CONFIG] strategy_loaded=%s profile=%s", type(strategy).__name__, profile_path_used)
+    dialog_resolver = DialogResolver(max_repeat=cfg.dialog_max_repeat)
+    plan_executor = PlanExecutor()
     cooldowns = TurnCooldowns()
+
+    hand_snapshot = read_hand(client, profile_index.profile)
+    unknown_ids = sorted(
+        {
+            card.card_id
+            for card in hand_snapshot
+            if card.card_id is not None and card.name == "unknown"
+        }
+    )
+    hand_summary = [card.name for card in hand_snapshot]
+    LOG.info("[HAND] summary=%s", hand_summary)
+    if unknown_ids:
+        LOG.warning("[HAND] unknown_card_ids=%s", unknown_ids)
 
     last_turn: Optional[int] = None
 
@@ -365,7 +407,14 @@ def main() -> int:
             _try("duel_ended_exit_duel", client.duel_ended_exit_duel)
             return 0
 
-        _resolve_if_inputting(client, cfg, profile_index, cooldowns)
+        state = snapshot_state(client) or {}
+        hand_snapshot = read_hand(client, profile_index.profile)
+
+        if _try("is_inputting", client.is_inputting):
+            result = dialog_resolver.resolve(client, strategy=strategy, state=state, cfg=cfg)
+            if result != "selected" and result != "canceled":
+                time.sleep(cfg.tick_s)
+                continue
 
         turn = _try("get_turn_number", client.get_turn_number)
         if isinstance(turn, int) and turn != last_turn:
@@ -391,7 +440,10 @@ def main() -> int:
 
         if phase_name in ("main1", "main_phase_1", "main_phase1", "main_phase"):
             LOG.info(">>> ENTER handle_my_main_phase_1")
-            _handle_my_main_phase_1(client, cfg)
+            _handle_my_main_phase_1(client, cfg, strategy, state, hand_snapshot, plan_executor)
+        else:
+            time.sleep(cfg.tick_s)
+            continue
 
         time.sleep(cfg.tick_s)
 

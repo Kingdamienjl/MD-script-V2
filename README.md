@@ -8,8 +8,8 @@ The bot configuration is driven by environment variables so you can tune dialog 
 
 1) Copy `logic/decks/_template` to `logic/decks/<newdeck>`.
 2) Edit `logic/decks/<newdeck>/profile.json` to match your deck list.
-3) Implement `logic/decks/<newdeck>/strategy.py` exporting `get_strategy(profile, strategy_name)`.
-4) Set `BOT_DECK=<newdeck>` when launching the bot.
+3) Implement `logic/rulesets/<newdeck>/strategy.py` exporting `get_strategy(profile, strategy_name)`.
+4) Set `BOT_RULESET=<newdeck>` when launching the bot.
 
 ### Profile location and strict filtering
 
