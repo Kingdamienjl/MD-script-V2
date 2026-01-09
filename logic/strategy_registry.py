@@ -40,7 +40,9 @@ class Action:
 
 
 class StrategyLike(Protocol):
-    def plan_main_phase_1(self, state: dict, client: object, cfg: BotConfig) -> List[Action]: ...
+    def plan_main_phase_1(
+        self, state: dict, hand: list, client: object, cfg: BotConfig
+    ) -> List[Action]: ...
     def on_dialog(self, dialog_cards: list[str], state: dict, client: object, cfg: BotConfig): ...
 
 
@@ -49,7 +51,7 @@ class NoopStrategy:
     name: str = "noop"
     deck_name: str = "unknown"
 
-    def plan_main_phase_1(self, state: dict, client: object, cfg: BotConfig) -> List[Action]:
+    def plan_main_phase_1(self, state: dict, hand: list, client: object, cfg: BotConfig) -> List[Action]:
         return [Action(type="pass", description="Noop strategy -> pass")]
 
     def on_dialog(self, dialog_cards, state, client: object, cfg: BotConfig):

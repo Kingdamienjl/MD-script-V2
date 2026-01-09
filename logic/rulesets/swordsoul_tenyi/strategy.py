@@ -27,7 +27,7 @@ class SwordsoulTenyiStrategy:
     profile: dict
     name: str = "default"
 
-    def plan_main_phase_1(self, state: dict, client: object, cfg) -> list[Action]:
+    def plan_main_phase_1(self, state: dict, hand: list, client: object, cfg) -> list[Action]:
         LOG.info("[STRATEGY] planning main phase 1")
         actions = []
 

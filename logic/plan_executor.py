@@ -12,7 +12,7 @@ LOG = logging.getLogger("plan_executor")
 
 
 class PlanExecutor:
-    def execute(self, client: object, actions: Iterable[Action]) -> None:
+    def execute(self, actions: Iterable[Action], client: object, cfg: object | None = None) -> None:
         for action in actions:
             self._execute_with_retry(client, action)
 
