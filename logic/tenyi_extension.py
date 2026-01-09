@@ -17,7 +17,7 @@ def extend_plan_with_tenyi(plan: list[Intent], profile: ProfileIndex, ctx: dict)
         return plan
 
     ashuna_intent = Intent("ACTIVATE_HAND_EFFECT", ashuna)
-    starter = profile.starters_priority[0] if profile.starters_priority else None
+    starter = profile.main_priority[0] if profile.main_priority else None
     if starter and starter in hand_names:
         return [ashuna_intent, *plan]
 

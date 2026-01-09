@@ -30,7 +30,7 @@ class SwordsoulPlanner:
         intents: list[Intent] = []
         hand = list(ctx.get("hand_names", []))
 
-        starter = self._pick_first_in_priority(hand, self.profile_index.starters_priority)
+        starter = self._pick_first_in_priority(hand, self.profile_index.main_priority)
         if starter:
             intents.append(Intent("NORMAL_SUMMON", starter))
             intents.append(Intent("ACTIVATE_FIELD_EFFECT", starter))
@@ -39,24 +39,18 @@ class SwordsoulPlanner:
         if longyuan_name in hand and self.profile_index.is_allowed(longyuan_name):
             discardable = self._pick_first_in_priority(
                 [name for name in hand if name != longyuan_name],
-                self.profile_index.discard_priority,
+                self.profile_index.main_priority,
             )
             if discardable:
                 intents.append(Intent("SPECIAL_SUMMON_FROM_HAND", longyuan_name))
 
-        if self.profile_index.extra_deck_priority:
+        if self.profile_index.extra_priority:
             intents.append(
                 Intent(
                     "EXTRA_DECK_SUMMON",
-                    candidates=self.profile_index.extra_deck_priority,
+                    candidates=self.profile_index.extra_priority,
                 )
             )
-
-        backrow = self._pick_first_in_priority(
-            hand, self.profile_index.set_backrow_priority
-        )
-        if backrow:
-            intents.append(Intent("SET_BACKROW", backrow))
 
         return intents
 

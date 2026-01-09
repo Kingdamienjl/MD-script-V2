@@ -42,8 +42,8 @@ def _parse_bool(value: str | None, default: bool) -> bool:
     return default
 
 
-def _default_profile_path(decks_dir: Path) -> Path:
-    deck_profile = decks_dir / "swordsoul_tenyi" / "profile.json"
+def _default_profile_path(decks_dir: Path, ruleset: str) -> Path:
+    deck_profile = decks_dir / ruleset / "profile.json"
     if deck_profile.exists():
         return deck_profile
     return Path("logic/deck_profile.json")
@@ -57,12 +57,12 @@ def load_config() -> BotConfig:
     dump_dir = Path(os.getenv("BOT_DUMP_DIR", "artifacts")).expanduser()
     max_actions_per_tick = _parse_int(os.getenv("BOT_MAX_ACTIONS_PER_TICK"), 2)
     decks_dir = Path(os.getenv("BOT_DECKS_DIR", "logic/decks")).expanduser()
-    profile_default = _default_profile_path(decks_dir)
-    profile_path = Path(os.getenv("BOT_PROFILE_PATH", str(profile_default))).expanduser()
     strict_profile = _parse_bool(os.getenv("BOT_STRICT_PROFILE"), True)
-    deck = os.getenv("BOT_DECK", "swordsoul_tenyi")
     strategy = os.getenv("BOT_STRATEGY", "default")
     ruleset = os.getenv("BOT_RULESET", "swordsoul_tenyi")
+    profile_default = _default_profile_path(decks_dir, ruleset)
+    profile_path = Path(os.getenv("BOT_PROFILE_PATH", str(profile_default))).expanduser()
+    deck = os.getenv("BOT_DECK", ruleset)
 
     dump_dir.mkdir(parents=True, exist_ok=True)
     profile_path.parent.mkdir(parents=True, exist_ok=True)
