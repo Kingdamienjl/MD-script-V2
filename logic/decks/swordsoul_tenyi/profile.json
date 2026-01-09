@@ -1,25 +1,42 @@
 {
-  "starters": [
-    "Swordsoul of Mo Ye",
+  "deck_name": "swordsoul_tenyi",
+  "version": "0.1",
+  "dialog_pick_priority": [
     "Swordsoul Strategist Longyuan",
-    "Swordsoul of Taia"
-  ],
-  "extenders": [
+    "Swordsoul of Mo Ye",
+    "Swordsoul of Taia",
+    "Incredible Ecclesia, the Virtuous",
+    "Swordsoul Emergence",
+    "Vessel for the Dragon Cycle",
+    "Heavenly Dragon Circle",
     "Tenyi Spirit - Ashuna",
     "Tenyi Spirit - Vishuda",
-    "Tenyi Spirit - Adhara"
+    "Tenyi Spirit - Adhara",
+    "Tenyi Spirit - Shthana",
+    "Swordsoul Blackout",
+    "Ash Blossom & Joyous Spring",
+    "Maxx \"C\"",
+    "Effect Veiler",
+    "Infinite Impermanence"
   ],
-  "spells": [
-    "Swordsoul Emergence",
-    "Heavenly Dragon Circle"
-  ],
-  "traps": [
-    "Swordsoul Blackout"
-  ],
-  "extra_deck_priority": [
-    "Swordsoul Grandmaster - Chixiao",
-    "Baronne de Fleur",
-    "Baxia, Brightness of the Yang Zing",
-    "Yazi, Evil of the Yang Zing"
-  ]
+  "cards": {
+    "Swordsoul of Mo Ye": { "role": ["starter"] },
+    "Swordsoul of Taia": { "role": ["starter"] },
+    "Swordsoul Strategist Longyuan": { "role": ["extender", "finisher"] },
+    "Incredible Ecclesia, the Virtuous": { "role": ["starter", "extender"] },
+    "Swordsoul Emergence": { "role": ["search"] },
+    "Swordsoul Blackout": { "role": ["interaction"] },
+    "Vessel for the Dragon Cycle": { "role": ["setup", "search"] },
+    "Heavenly Dragon Circle": { "role": ["search", "protection"] },
+    "Tenyi Spirit - Ashuna": { "role": ["extender"] },
+    "Tenyi Spirit - Vishuda": { "role": ["extender"] },
+    "Tenyi Spirit - Adhara": { "role": ["extender"] },
+    "Tenyi Spirit - Shthana": { "role": ["extender"] }
+  },
+  "notes": {
+    "todo": [
+      "Replace this profile with your exact in-game deck list (names must match the bot's detected names).",
+      "Add explicit per-dialog rules once we tag dialogs by type (discard/select/banish/etc)."
+    ]
+  }
 }

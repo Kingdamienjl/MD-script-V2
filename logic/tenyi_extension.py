@@ -1,27 +1,18 @@
-"""Tenyi extensions for Swordsoul opener plans."""
+"""
+Tenyi extension helpers (placeholder).
+
+This will host the special summon / chain-blocking logic for Tenyi lines:
+- Ashuna -> Vishuda/Adhara, etc.
+- Heavenly Dragon Circle interactions
+- Vessel for the Dragon Cycle mills/searches
+"""
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import List
 
-from logic.profile import ProfileIndex
-from logic.swordsoul_planner import Intent
+from logic.strategy_registry import Action
 
 
-def extend_plan_with_tenyi(plan: list[Intent], profile: ProfileIndex, state) -> list[Intent]:
-    hand_names = [card.name for card in state.hand if card.name]
-    if "Tenyi Spirit - Ashuna" not in hand_names:
-        return plan
-
-    monster_count = getattr(state, "monster_count", 0)
-    if monster_count > 0:
-        return plan
-
-    ashuna_intent = Intent("ACTIVATE_HAND_EFFECT", "Tenyi Spirit - Ashuna")
-
-    has_mo_ye = "Swordsoul of Mo Ye" in hand_names
-    has_taia = "Swordsoul of Taia" in hand_names
-    if has_mo_ye or has_taia:
-        return [ashuna_intent, *plan]
-
-    return plan + [ashuna_intent]
+def plan_tenyi_extension(profile: dict, state: dict) -> List[Action]:
+    return []
