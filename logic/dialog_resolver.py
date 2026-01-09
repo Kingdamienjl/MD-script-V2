@@ -3,51 +3,42 @@
 from __future__ import annotations
 
 import logging
-import time
-from collections import deque
-from dataclasses import dataclass
 from enum import Enum
-from typing import Deque, Sequence
+from typing import Optional
+
+from logic.dialog_manager import DialogManager
+from logic.strategy_base import Strategy
 
 
 class DialogButtonType(str, Enum):
     Left = "left"
+    Middle = "middle"
     Right = "right"
 
 
-@dataclass(frozen=True)
-class DialogSnapshot:
-    cards: tuple[str, ...]
-    timestamp: float
+LOG = logging.getLogger("dialog_resolver")
 
 
 class DialogResolver:
-    def __init__(self, max_memory: int = 5) -> None:
-        self._memory: Deque[DialogSnapshot] = deque(maxlen=max_memory)
+    def __init__(self, max_repeat: int = 3) -> None:
+        self.dialog_manager = DialogManager(repeat_limit=max_repeat)
 
-    def resolve(self, client: object) -> str:
+    def resolve(
+        self,
+        client: object,
+        strategy: Optional[Strategy] = None,
+        state: Optional[dict] = None,
+        cfg: Optional[object] = None,
+    ) -> str:
         dialog_list = list(getattr(client, "get_dialog_card_list", lambda: [])())
-        snapshot = DialogSnapshot(cards=tuple(dialog_list), timestamp=time.monotonic())
-        self._memory.append(snapshot)
-        logging.info("[DIALOG] snapshot=%s", dialog_list)
+        if not dialog_list:
+            return "no_dialog"
 
-        repeats = self._count_repeats(snapshot)
-        if repeats >= 3:
-            logging.warning("[DIALOG] stuck_detected repeats=%s", repeats)
-            getattr(client, "cancel_activation_prompts", lambda: None)()
-            getattr(client, "handle_unexpected_prompts", lambda: None)()
-            getattr(client, "select_card_from_dialog", lambda *_args: None)(
-                None, DialogButtonType.Right
-            )
-            if getattr(client, "is_inputting", lambda: False)():
-                logging.warning("[DIALOG] bailout")
-                return "bailout"
-        return "handled"
+        state_obj = state or {}
+        profile = getattr(strategy, "profile", {}) if strategy else {}
+        handled = self.dialog_manager.resolve_once(client, state_obj, profile, cfg)
+        return "selected" if handled else "no_action"
 
-    def _count_repeats(self, snapshot: DialogSnapshot) -> int:
-        window_start = snapshot.timestamp - 5.0
-        repeats = 0
-        for item in self._memory:
-            if item.timestamp >= window_start and item.cards == snapshot.cards:
-                repeats += 1
-        return repeats
+    @staticmethod
+    def _log(dialog_list: list[str], action: str, reason: str) -> None:
+        LOG.info("[DIALOG] cards=%s action=%s reason=%s", dialog_list, action, reason)

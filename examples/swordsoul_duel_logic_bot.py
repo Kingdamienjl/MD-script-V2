@@ -20,16 +20,16 @@ import os
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from jduel_bot.config import BotConfig
 from jduel_bot.jduel_bot_client import JDuelBotClient
-from jduel_bot.jduel_bot_enums import (
-    CardSelection,
-    DialogButtonType,
-    Phase,
-)
+from jduel_bot.jduel_bot_enums import Phase
 
+from logic.dialog_manager import DialogManager
+from logic.hand_reader import read_hand
+from logic.plan_executor import PlanExecutor
 from logic.profile import ProfileIndex
 from logic.strategy_registry import Action, load_strategy
 
@@ -110,176 +110,6 @@ def _try(label: str, fn, *args, **kwargs):
         return None
 
 
-def _set_confirm_mode(client: JDuelBotClient, cfg: BotConfig) -> None:
-    mode = cfg.activation_confirm_mode()
-    _try(f"set_activation_confirmation({mode.name})", client.set_activation_confirmation, mode)
-
-
-def _resolve_dialog(
-    client: JDuelBotClient,
-    profile_index: ProfileIndex,
-    cooldowns: TurnCooldowns,
-) -> bool:
-    """
-    Attempt to resolve any open dialog.
-
-    Returns True if we *think* we made progress (clicked something), else False.
-    """
-    dialog_cards = _try("get_dialog_card_list", client.get_dialog_card_list)
-    if not dialog_cards:
-        return False
-
-    cooldowns.stuck_dialog_cycles += 1
-    is_stuck = cooldowns.stuck_dialog_cycles >= 6
-
-    LOG.info("[DIALOG] cards=%s stuck_cycles=%s", dialog_cards, cooldowns.stuck_dialog_cycles)
-
-    choice = profile_index.pick_dialog_choice(dialog_cards)
-
-    sequences = [
-        [("select", choice, DialogButtonType.Middle), ("confirm", None, DialogButtonType.Right)],
-        [("select", choice, DialogButtonType.Right), ("confirm", None, DialogButtonType.Right)],
-        [("confirm", None, DialogButtonType.Right)],
-        [("confirm", None, DialogButtonType.Middle)],
-    ]
-
-    progressed = False
-    for step, sel, btn in sequences:
-        if sel is None:
-            _try(
-                f"select_card_from_dialog(None,{btn.name})",
-                client.select_card_from_dialog,
-                None,
-                btn,
-                120,
-            )
-        else:
-            _try(
-                f"select_card_from_dialog(sel={sel.card_index},{btn.name})",
-                client.select_card_from_dialog,
-                sel,
-                btn,
-                120,
-            )
-        progressed = True
-        time.sleep(0.12)
-
-        if not _try("is_inputting", client.is_inputting):
-            cooldowns.stuck_dialog_cycles = 0
-            return True
-
-    if is_stuck:
-        LOG.warning("[DIALOG] appears stuck -> trying cancel_activation_prompts + handle_unexpected_prompts")
-        _try("cancel_activation_prompts", client.cancel_activation_prompts)
-        time.sleep(0.1)
-        _try("handle_unexpected_prompts", client.handle_unexpected_prompts)
-        time.sleep(0.1)
-        cooldowns.stuck_dialog_cycles = max(0, cooldowns.stuck_dialog_cycles - 3)
-
-    return progressed
-
-
-def _resolve_if_inputting(
-    client: JDuelBotClient,
-    cfg: BotConfig,
-    profile_index: ProfileIndex,
-    cooldowns: TurnCooldowns,
-) -> None:
-    if not _try("is_inputting", client.is_inputting):
-        cooldowns.stuck_dialog_cycles = 0
-        return
-
-    LOG.info("[STATE] is_inputting=True -> attempting prompt/dialog resolve")
-    _try("handle_unexpected_prompts", client.handle_unexpected_prompts)
-    _set_confirm_mode(client, cfg)
-
-    if _resolve_dialog(client, profile_index, cooldowns):
-        return
-
-    _try("cancel_activation_prompts", client.cancel_activation_prompts)
-
-
-def _execute_actions(client: JDuelBotClient, cfg: BotConfig, actions: list[Action]) -> None:
-    for action in actions:
-        t = action.type
-        a = action.args or {}
-        LOG.info("[PLAN] %s %s", t, action.description or "")
-
-        if t == "wait_input":
-            _try("wait_for_input_enabled", client.wait_for_input_enabled)
-        elif t == "move_phase":
-            _try(f"move_phase({a.get('phase')})", client.move_phase, a["phase"])
-        elif t == "advance_phase":
-            _try(f"move_phase({a.get('phase')})", client.move_phase, a["phase"])
-        elif t == "normal_summon":
-            _try(
-                f"normal_summon_monster(idx={a['hand_index']},{a['position']})",
-                client.normal_summon_monster,
-                a["hand_index"],
-                a["position"],
-            )
-        elif t == "activate_monster_effect_field":
-            _try(
-                f"activate_monster_effect_from_field({a['position']})",
-                client.activate_monster_effect_from_field,
-                a["position"],
-            )
-        elif t == "activate_spell_hand":
-            _try(
-                f"activate_spell_or_trap_from_hand(idx={a['hand_index']},{a['position']})",
-                client.activate_spell_or_trap_from_hand,
-                a["hand_index"],
-                a["position"],
-            )
-        elif t == "set_spell_hand":
-            _try(
-                f"set_spell_or_trap_from_hand(idx={a['hand_index']},{a['position']})",
-                client.set_spell_or_trap_from_hand,
-                a["hand_index"],
-                a["position"],
-            )
-        elif t == "extra_deck_summon":
-            _try(
-                f"perform_extra_deck_summon({a['name']})",
-                client.perform_extra_deck_summon,
-                a["name"],
-                a["positions"],
-            )
-        elif t == "pass":
-            _try("move_phase(battle)", client.move_phase, "battle")
-            time.sleep(0.1)
-            _try("move_phase(end)", client.move_phase, "end")
-        else:
-            LOG.debug("Unknown action type=%s args=%s", t, a)
-
-        time.sleep(cfg.action_delay_s)
-
-
-def _handle_my_main_phase_1(
-    client: JDuelBotClient,
-    cfg: BotConfig,
-) -> None:
-    state = snapshot_state(client) or {}
-
-    strategy = load_strategy(
-        deck_name=cfg.ruleset,
-        strategy_name=cfg.strategy,
-        decks_dir=cfg.decks_dir,
-        profile_path=cfg.legacy_profile_path,
-    )
-
-    try:
-        actions = strategy.plan_main_phase_1(state, client, cfg)
-    except Exception:
-        LOG.error("strategy.plan_main_phase_1 crashed:\n%s", traceback.format_exc())
-        actions = [Action(type="pass", args={}, description="Fallback pass after strategy crash")]
-
-    if not actions:
-        actions = [Action(type="pass", args={}, description="No actions planned -> pass")]
-
-    _execute_actions(client, cfg, actions)
-
-
 def main() -> int:
     _setup_logging()
     cfg = BotConfig.from_env()
@@ -287,13 +117,55 @@ def main() -> int:
     LOG.info('"Swordsoul Duel Logic Bot" has been started...')
     LOG.info("Using address: %s", cfg.zmq_address)
 
+    deck_profile_path = Path(cfg.decks_dir) / cfg.ruleset / "profile.json"
+    if deck_profile_path.exists():
+        profile_path_used = deck_profile_path
+    else:
+        profile_path_used = Path(cfg.legacy_profile_path)
+
+    LOG.info(
+        "[CONFIG] ruleset=%s strategy=%s decks_dir=%s confirm_mode=%s profile_path=%s",
+        cfg.ruleset,
+        cfg.strategy,
+        cfg.decks_dir,
+        cfg.confirm_mode,
+        profile_path_used,
+    )
+
     client = JDuelBotClient(address=cfg.zmq_address, timeout_ms=cfg.timeout_ms)
     LOG.info("[ZMQ] Connected to %s", cfg.zmq_address)
 
     dump_debug_info_once(client)
 
     profile_index = ProfileIndex.from_deck(cfg.ruleset, cfg.decks_dir, cfg.legacy_profile_path)
+    strategy = load_strategy(
+        deck_name=cfg.ruleset,
+        strategy_name=cfg.strategy,
+        decks_dir=cfg.decks_dir,
+        profile_path=cfg.legacy_profile_path,
+    )
+    LOG.info("[CONFIG] strategy_loaded=%s profile=%s", type(strategy).__name__, profile_path_used)
+    dialog_manager = DialogManager(repeat_limit=cfg.dialog_max_repeat)
+    plan_executor = PlanExecutor()
     cooldowns = TurnCooldowns()
+    pending_plan: list[Action] = []
+    pending_index = 0
+    actions_this_turn = 0
+    last_plan_signature: tuple | None = None
+    plan_cooldown_ticks = 0
+
+    hand_snapshot = read_hand(client, profile_index.profile)
+    unknown_ids = sorted(
+        {
+            card.card_id
+            for card in hand_snapshot
+            if card.card_id is not None and card.name == "unknown"
+        }
+    )
+    hand_summary = [card.name for card in hand_snapshot]
+    LOG.info("[HAND] summary=%s", hand_summary)
+    if unknown_ids:
+        LOG.warning("[HAND] unknown_card_ids=%s", unknown_ids)
 
     last_turn: Optional[int] = None
 
@@ -307,12 +179,26 @@ def main() -> int:
             _try("duel_ended_exit_duel", client.duel_ended_exit_duel)
             return 0
 
-        _resolve_if_inputting(client, cfg, profile_index, cooldowns)
+        if plan_cooldown_ticks > 0:
+            plan_cooldown_ticks -= 1
+
+        state = snapshot_state(client) or {}
+        hand_snapshot = read_hand(client, profile_index.profile)
+
+        if _try("is_inputting", client.is_inputting):
+            dialog_manager.resolve_once(client, state, profile_index.profile, cfg)
+            time.sleep(cfg.tick_s)
+            continue
 
         turn = _try("get_turn_number", client.get_turn_number)
         if isinstance(turn, int) and turn != last_turn:
             last_turn = turn
             cooldowns.stuck_dialog_cycles = 0
+            pending_plan = []
+            pending_index = 0
+            actions_this_turn = 0
+            last_plan_signature = None
+            plan_cooldown_ticks = 0
             LOG.info("[TURN] New turn detected: %s", turn)
 
         if not _try("is_my_turn", client.is_my_turn):
@@ -330,8 +216,58 @@ def main() -> int:
             phase_name = str(phase).lower()
 
         if phase_name in ("main1", "main_phase_1", "main_phase1", "main_phase"):
-            LOG.info(">>> ENTER handle_my_main_phase_1")
-            _handle_my_main_phase_1(client, cfg)
+            if pending_plan:
+                if actions_this_turn >= 6:
+                    time.sleep(cfg.tick_s)
+                    continue
+                action = pending_plan[pending_index]
+                LOG.info(
+                    "[EXEC] step %s/%s type=%s desc=%s",
+                    pending_index + 1,
+                    len(pending_plan),
+                    action.type,
+                    action.description,
+                )
+                ok = plan_executor.execute_next(pending_plan, pending_index, client)
+                if ok:
+                    pending_index += 1
+                    actions_this_turn += 1
+                if _try("is_inputting", client.is_inputting):
+                    time.sleep(cfg.tick_s)
+                    continue
+                if pending_index >= len(pending_plan):
+                    pending_plan = []
+                    pending_index = 0
+                time.sleep(cfg.tick_s)
+                continue
+
+            if actions_this_turn >= 6:
+                time.sleep(cfg.tick_s)
+                continue
+
+            try:
+                actions = strategy.plan_main_phase_1(state, hand_snapshot, client, cfg)
+            except Exception:
+                LOG.error("strategy.plan_main_phase_1 crashed:\n%s", traceback.format_exc())
+                actions = [Action(type="pass", args={}, description="Fallback pass after strategy crash")]
+
+            if not actions:
+                actions = [Action(type="pass", args={}, description="No actions planned -> pass")]
+
+            signature = tuple((action.type, action.description) for action in actions)
+            if signature == last_plan_signature and plan_cooldown_ticks > 0:
+                time.sleep(cfg.tick_s)
+                continue
+
+            opener = actions[0].description if actions else "unknown"
+            LOG.info("[PLAN] built n_actions=%s opener=%s", len(actions), opener)
+            pending_plan = actions
+            pending_index = 0
+            last_plan_signature = signature
+            plan_cooldown_ticks = 4
+        else:
+            time.sleep(cfg.tick_s)
+            continue
 
         time.sleep(cfg.tick_s)
 

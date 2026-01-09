@@ -19,19 +19,188 @@
     "Effect Veiler",
     "Infinite Impermanence"
   ],
+  "dialog_priority": [
+    "Swordsoul Strategist Longyuan",
+    "Swordsoul of Mo Ye",
+    "Swordsoul of Taia",
+    "Incredible Ecclesia, the Virtuous",
+    "Swordsoul Emergence",
+    "Vessel for the Dragon Cycle",
+    "Heavenly Dragon Circle",
+    "Tenyi Spirit - Ashuna",
+    "Tenyi Spirit - Vishuda",
+    "Tenyi Spirit - Adhara",
+    "Tenyi Spirit - Shthana",
+    "Swordsoul Blackout",
+    "Ash Blossom & Joyous Spring",
+    "Maxx \"C\"",
+    "Effect Veiler",
+    "Infinite Impermanence"
+  ],
+  "dialog_default_button": "middle_then_right",
+  "priority_groups": {
+    "normal_summon": [
+      "Swordsoul of Mo Ye",
+      "Swordsoul of Taia",
+      "Incredible Ecclesia, the Virtuous"
+    ],
+    "special_summon": [
+      "Swordsoul Strategist Longyuan",
+      "Tenyi Spirit - Ashuna",
+      "Tenyi Spirit - Vishuda",
+      "Tenyi Spirit - Adhara",
+      "Tenyi Spirit - Shthana"
+    ],
+    "spells": [
+      "Swordsoul Emergence",
+      "Vessel for the Dragon Cycle",
+      "Heavenly Dragon Circle"
+    ],
+    "sets": [
+      "Swordsoul Blackout",
+      "Infinite Impermanence"
+    ],
+    "extra_deck": [
+      "Swordsoul Grandmaster - Chixiao",
+      "Baronne de Fleur",
+      "Swordsoul Supreme Sovereign - Chengying",
+      "Baxia, Brightness of the Yang Zing",
+      "Yazi, Evil of the Yang Zing",
+      "Monk of the Tenyi",
+      "Shaman of the Tenyi"
+    ]
+  },
   "cards": {
-    "Swordsoul of Mo Ye": { "role": ["starter"] },
-    "Swordsoul of Taia": { "role": ["starter"] },
-    "Swordsoul Strategist Longyuan": { "role": ["extender", "finisher"] },
-    "Incredible Ecclesia, the Virtuous": { "role": ["starter", "extender"] },
-    "Swordsoul Emergence": { "role": ["search"] },
-    "Swordsoul Blackout": { "role": ["interaction"] },
-    "Vessel for the Dragon Cycle": { "role": ["setup", "search"] },
-    "Heavenly Dragon Circle": { "role": ["search", "protection"] },
-    "Tenyi Spirit - Ashuna": { "role": ["extender"] },
-    "Tenyi Spirit - Vishuda": { "role": ["extender"] },
-    "Tenyi Spirit - Adhara": { "role": ["extender"] },
-    "Tenyi Spirit - Shthana": { "role": ["extender"] }
+    "Swordsoul of Mo Ye": {
+      "count": 3,
+      "tags": ["starter", "opener"],
+      "main1_priority": 90,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Swordsoul of Taia": {
+      "count": 2,
+      "tags": ["starter"],
+      "main1_priority": 70,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Swordsoul Strategist Longyuan": {
+      "count": 2,
+      "tags": ["extender", "discard_fodder"],
+      "main1_priority": 80,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Incredible Ecclesia, the Virtuous": {
+      "count": 2,
+      "tags": ["starter", "extender", "opener"],
+      "main1_priority": 75,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Swordsoul Emergence": {
+      "count": 3,
+      "tags": ["search", "starter"],
+      "main1_priority": 85,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Vessel for the Dragon Cycle": {
+      "count": 2,
+      "tags": ["search", "extender"],
+      "main1_priority": 65,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Heavenly Dragon Circle": {
+      "count": 2,
+      "tags": ["search", "disruption"],
+      "main1_priority": 55,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Tenyi Spirit - Ashuna": {
+      "count": 3,
+      "tags": ["extender", "opener"],
+      "main1_priority": 80,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Tenyi Spirit - Vishuda": {
+      "count": 2,
+      "tags": ["extender"],
+      "main1_priority": 60,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Tenyi Spirit - Adhara": {
+      "count": 2,
+      "tags": ["extender", "discard_fodder"],
+      "main1_priority": 60,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Tenyi Spirit - Shthana": {
+      "count": 1,
+      "tags": ["extender"],
+      "main1_priority": 40,
+      "set_priority": 0,
+      "hold_priority": 5
+    },
+    "Swordsoul Blackout": {
+      "count": 1,
+      "tags": ["disruption"],
+      "main1_priority": 20,
+      "set_priority": 80,
+      "hold_priority": 10
+    },
+    "Ash Blossom & Joyous Spring": {
+      "count": 2,
+      "tags": ["disruption"],
+      "main1_priority": 10,
+      "set_priority": 0,
+      "hold_priority": 80
+    },
+    "Maxx \"C\"": {
+      "count": 3,
+      "tags": ["disruption"],
+      "main1_priority": 10,
+      "set_priority": 0,
+      "hold_priority": 80
+    },
+    "Effect Veiler": {
+      "count": 2,
+      "tags": ["disruption"],
+      "main1_priority": 10,
+      "set_priority": 0,
+      "hold_priority": 80
+    },
+    "Infinite Impermanence": {
+      "count": 3,
+      "tags": ["disruption"],
+      "main1_priority": 10,
+      "set_priority": 60,
+      "hold_priority": 80
+    }
+  },
+  "extra_deck": {
+    "Swordsoul Grandmaster - Chixiao": { "count": 2 },
+    "Baronne de Fleur": { "count": 1 },
+    "Swordsoul Supreme Sovereign - Chengying": { "count": 1 },
+    "Baxia, Brightness of the Yang Zing": { "count": 1 },
+    "Yazi, Evil of the Yang Zing": { "count": 1 },
+    "Monk of the Tenyi": { "count": 1 },
+    "Shaman of the Tenyi": { "count": 1 }
+  },
+  "extra_deck_priority": [
+    "Swordsoul Grandmaster - Chixiao",
+    "Baronne de Fleur",
+    "Swordsoul Supreme Sovereign - Chengying",
+    "Baxia, Brightness of the Yang Zing",
+    "Yazi, Evil of the Yang Zing",
+    "Monk of the Tenyi",
+    "Shaman of the Tenyi"
   },
   "notes": {
     "todo": [
