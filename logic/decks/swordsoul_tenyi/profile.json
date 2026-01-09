@@ -19,6 +19,57 @@
     "Effect Veiler",
     "Infinite Impermanence"
   ],
+  "dialog_priority": [
+    "Swordsoul Strategist Longyuan",
+    "Swordsoul of Mo Ye",
+    "Swordsoul of Taia",
+    "Incredible Ecclesia, the Virtuous",
+    "Swordsoul Emergence",
+    "Vessel for the Dragon Cycle",
+    "Heavenly Dragon Circle",
+    "Tenyi Spirit - Ashuna",
+    "Tenyi Spirit - Vishuda",
+    "Tenyi Spirit - Adhara",
+    "Tenyi Spirit - Shthana",
+    "Swordsoul Blackout",
+    "Ash Blossom & Joyous Spring",
+    "Maxx \"C\"",
+    "Effect Veiler",
+    "Infinite Impermanence"
+  ],
+  "dialog_default_button": "middle_then_right",
+  "priority_groups": {
+    "normal_summon": [
+      "Swordsoul of Mo Ye",
+      "Swordsoul of Taia",
+      "Incredible Ecclesia, the Virtuous"
+    ],
+    "special_summon": [
+      "Swordsoul Strategist Longyuan",
+      "Tenyi Spirit - Ashuna",
+      "Tenyi Spirit - Vishuda",
+      "Tenyi Spirit - Adhara",
+      "Tenyi Spirit - Shthana"
+    ],
+    "spells": [
+      "Swordsoul Emergence",
+      "Vessel for the Dragon Cycle",
+      "Heavenly Dragon Circle"
+    ],
+    "sets": [
+      "Swordsoul Blackout",
+      "Infinite Impermanence"
+    ],
+    "extra_deck": [
+      "Swordsoul Grandmaster - Chixiao",
+      "Baronne de Fleur",
+      "Swordsoul Supreme Sovereign - Chengying",
+      "Baxia, Brightness of the Yang Zing",
+      "Yazi, Evil of the Yang Zing",
+      "Monk of the Tenyi",
+      "Shaman of the Tenyi"
+    ]
+  },
   "cards": {
     "Swordsoul of Mo Ye": {
       "count": 3,
