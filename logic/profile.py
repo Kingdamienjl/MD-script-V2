@@ -1,9 +1,10 @@
 """
-Profile loading + small helpers.
+Profile loading + helpers.
 
 A "profile" is deck metadata used for heuristics:
 - dialog pick priority (which card to pick when a dialog shows a list)
-- optional per-card weights / tags for future strategy work
+- priority_groups for planners (order to try cards/handlers)
+- per-card tags/weights for future strategy work
 """
 
 from __future__ import annotations
@@ -18,7 +19,6 @@ from jduel_bot.jduel_bot_enums import CardSelection
 
 LOG = logging.getLogger("profile")
 
-REQUIRED_CARD_FIELDS = {"count", "tags", "main1_priority", "set_priority", "hold_priority"}
 ALLOWED_TAGS = {
     "opener",
     "extender",
@@ -30,24 +30,33 @@ ALLOWED_TAGS = {
 }
 
 
-def _validate_cards(cards: Dict[str, Any]) -> None:
-    for name, data in cards.items():
-        if not isinstance(data, dict):
-            raise ValueError(f"Card entry for {name} must be an object.")
-        missing = REQUIRED_CARD_FIELDS - set(data.keys())
-        if missing:
-            raise ValueError(f"Card entry for {name} missing fields: {sorted(missing)}")
-        if not isinstance(data["count"], int) or data["count"] <= 0:
-            raise ValueError(f"Card entry for {name} has invalid count.")
-        tags = data["tags"]
-        if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
-            raise ValueError(f"Card entry for {name} tags must be a list of strings.")
-        invalid = sorted(set(tags) - ALLOWED_TAGS)
-        if invalid:
-            raise ValueError(f"Card entry for {name} has invalid tags: {invalid}")
-        for key in ("main1_priority", "set_priority", "hold_priority"):
-            if not isinstance(data[key], (int, float)):
-                raise ValueError(f"Card entry for {name} {key} must be numeric.")
+def _normalize_card_entry(data: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(data)
+    out.setdefault("count", 1)
+    out.setdefault("tags", [])
+    out.setdefault("main1_priority", 0)
+    out.setdefault("set_priority", 0)
+    out.setdefault("hold_priority", 0)
+
+    # sanitize
+    try:
+        out["count"] = int(out.get("count", 1))
+    except Exception:
+        out["count"] = 1
+
+    tags = out.get("tags", [])
+    if not isinstance(tags, list):
+        tags = []
+    tags = [str(t) for t in tags if isinstance(t, (str, int, float))]
+    out["tags"] = [t for t in tags if t in ALLOWED_TAGS]
+
+    for k in ("main1_priority", "set_priority", "hold_priority"):
+        try:
+            out[k] = float(out.get(k, 0))
+        except Exception:
+            out[k] = 0.0
+
+    return out
 
 
 def build_cards_by_id(profile: Dict[str, Any]) -> Dict[int, str]:
@@ -66,27 +75,37 @@ def build_cards_by_id(profile: Dict[str, Any]) -> Dict[int, str]:
     return mapping
 
 
-def validate_profile(profile: Dict[str, Any]) -> None:
+def validate_and_normalize_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(profile.get("deck_name"), str):
-        raise ValueError("Profile missing deck_name.")
+        profile["deck_name"] = "unknown"
+
+    # dialog_pick_priority is optional; but keep as list
     if not isinstance(profile.get("dialog_pick_priority"), list):
-        raise ValueError("Profile missing dialog_pick_priority list.")
-    if not isinstance(profile.get("dialog_priority"), list):
-        raise ValueError("Profile missing dialog_priority list.")
-    if profile.get("dialog_default_button") not in ("middle_then_right",):
-        raise ValueError("Profile dialog_default_button must be 'middle_then_right'.")
-    priority_groups = profile.get("priority_groups")
-    if not isinstance(priority_groups, dict):
-        raise ValueError("Profile missing priority_groups mapping.")
+        profile["dialog_pick_priority"] = []
+
     cards = profile.get("cards")
-    if not isinstance(cards, dict) or not cards:
-        raise ValueError("Profile must include a non-empty cards mapping.")
-    _validate_cards(cards)
-    extra_deck = profile.get("extra_deck")
-    if not isinstance(extra_deck, dict) or not extra_deck:
-        raise ValueError("Profile must include extra_deck mapping.")
+    if not isinstance(cards, dict):
+        profile["cards"] = {}
+        cards = profile["cards"]
+
+    normalized_cards: Dict[str, Any] = {}
+    for name, data in cards.items():
+        if isinstance(data, dict):
+            normalized_cards[str(name)] = _normalize_card_entry(data)
+    profile["cards"] = normalized_cards
+
+    # extra deck
+    if not isinstance(profile.get("extra_deck"), dict):
+        profile["extra_deck"] = {}
     if not isinstance(profile.get("extra_deck_priority"), list):
-        raise ValueError("Profile missing extra_deck_priority list.")
+        profile["extra_deck_priority"] = list(profile["extra_deck"].keys())
+
+    # priority_groups is optional but should be dict
+    if not isinstance(profile.get("priority_groups"), dict):
+        profile["priority_groups"] = {}
+
+    profile["cards_by_id"] = build_cards_by_id(profile)
+    return profile
 
 
 def load_profile(path: str) -> Dict[str, Any]:
@@ -96,9 +115,7 @@ def load_profile(path: str) -> Dict[str, Any]:
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("Profile must be a JSON object")
-    validate_profile(data)
-    data["cards_by_id"] = build_cards_by_id(data)
-    return data
+    return validate_and_normalize_profile(data)
 
 
 def _read_profile_from_deck(deck_name: str, decks_dir: str, fallback_path: str) -> Dict[str, Any]:
@@ -122,23 +139,11 @@ class ProfileIndex:
         return cls(profile=_read_profile_from_deck(deck_name, decks_dir, fallback_path))
 
     def _dialog_priority(self) -> List[str]:
-        # supported schemas:
-        # - {"dialog_pick_priority": [...]}
-        # - {"priorities": {"dialog_pick": [...]}}
         if isinstance(self.profile.get("dialog_pick_priority"), list):
             return [str(x) for x in self.profile["dialog_pick_priority"]]
-        pr = self.profile.get("priorities") or {}
-        if isinstance(pr, dict) and isinstance(pr.get("dialog_pick"), list):
-            return [str(x) for x in pr["dialog_pick"]]
         return []
 
     def pick_dialog_choice(self, dialog_cards: List[str]) -> Optional[CardSelection]:
-        """
-        Choose a CardSelection for a dialog list.
-
-        - Prefers the first matching name found in the profile priority list.
-        - Falls back to index 0 if nothing matches.
-        """
         if not dialog_cards:
             return None
 
@@ -151,78 +156,3 @@ class ProfileIndex:
                     return CardSelection(card_name=c, card_index=i)
 
         return CardSelection(card_name=cards[0], card_index=0)
-
-
-@dataclass(frozen=True)
-class DeckProfile:
-    profile: Dict[str, Any]
-
-    @classmethod
-    def from_deck(cls, deck_name: str, decks_dir: str, fallback_path: str) -> "DeckProfile":
-        return cls(profile=_read_profile_from_deck(deck_name, decks_dir, fallback_path))
-
-    def _card_data(self, name: str) -> Optional[Dict[str, Any]]:
-        cards = self.profile.get("cards", {})
-        if isinstance(cards, dict):
-            return cards.get(name)
-        return None
-
-    def tags_for(self, name: str) -> List[str]:
-        data = self._card_data(name) or {}
-        tags = data.get("tags", [])
-        return [str(tag) for tag in tags] if isinstance(tags, list) else []
-
-    def has_tag(self, name: str, tag: str) -> bool:
-        return tag in self.tags_for(name)
-
-    def is_opener(self, name: str) -> bool:
-        return self.has_tag(name, "opener")
-
-    def is_extender(self, name: str) -> bool:
-        return self.has_tag(name, "extender")
-
-    def is_starter(self, name: str) -> bool:
-        return self.has_tag(name, "starter")
-
-    def is_disruption(self, name: str) -> bool:
-        return self.has_tag(name, "disruption")
-
-    def is_brick(self, name: str) -> bool:
-        return self.has_tag(name, "brick")
-
-    def is_search(self, name: str) -> bool:
-        return self.has_tag(name, "search")
-
-    def is_discard_fodder(self, name: str) -> bool:
-        return self.has_tag(name, "discard_fodder")
-
-    def count(self, name: str) -> int:
-        data = self._card_data(name) or {}
-        count = data.get("count", 0)
-        return int(count) if isinstance(count, int) else 0
-
-    def main1_priority(self, name: str) -> float:
-        return float((self._card_data(name) or {}).get("main1_priority", 0))
-
-    def set_priority(self, name: str) -> float:
-        return float((self._card_data(name) or {}).get("set_priority", 0))
-
-    def hold_priority(self, name: str) -> float:
-        return float((self._card_data(name) or {}).get("hold_priority", 0))
-
-    def extra_deck_priority(self) -> List[str]:
-        priority = self.profile.get("extra_deck_priority", [])
-        return [str(name) for name in priority] if isinstance(priority, list) else []
-
-    def extra_deck_counts(self) -> Dict[str, int]:
-        extra_deck = self.profile.get("extra_deck", {})
-        if not isinstance(extra_deck, dict):
-            return {}
-        counts: Dict[str, int] = {}
-        for name, data in extra_deck.items():
-            if isinstance(data, dict) and isinstance(data.get("count"), int):
-                counts[str(name)] = data["count"]
-        return counts
-
-    def cards_by_id(self) -> Dict[int, str]:
-        return build_cards_by_id(self.profile)

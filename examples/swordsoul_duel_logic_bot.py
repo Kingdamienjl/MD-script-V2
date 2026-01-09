@@ -1,7 +1,7 @@
 """
 Swordsoul Duel Logic Bot (ruleset-driven)
 
-This module is intentionally defensive:
+Defensive by design:
 - It never raises just because a dialog is "stuck"
 - It tries multiple ways to confirm/close dialogs
 - It falls back to safe actions (advance phase / pass) when unsure
@@ -27,11 +27,11 @@ from jduel_bot.config import BotConfig
 from jduel_bot.jduel_bot_client import JDuelBotClient
 from jduel_bot.jduel_bot_enums import Phase
 
-from logic.dialog_manager import DialogManager
+from logic.dialog_resolver import DialogResolver
 from logic.hand_reader import read_hand
 from logic.plan_executor import PlanExecutor
 from logic.profile import ProfileIndex
-from logic.strategy_registry import Action, load_strategy
+from logic.strategy_registry import load_strategy
 
 # Optional (repo may already provide these)
 try:
@@ -40,7 +40,6 @@ except Exception:  # pragma: no cover
     @dataclass
     class TurnCooldowns:  # minimal fallback
         last_turn: int = -1
-        stuck_dialog_cycles: int = 0
 
     def snapshot_state(_client: JDuelBotClient) -> dict:
         return {}
@@ -110,6 +109,12 @@ def _try(label: str, fn, *args, **kwargs):
         return None
 
 
+def _phase_name(phase_obj: object) -> str:
+    if isinstance(phase_obj, Phase):
+        return phase_obj.name.lower()
+    return str(phase_obj).lower()
+
+
 def main() -> int:
     _setup_logging()
     cfg = BotConfig.from_env()
@@ -118,17 +123,14 @@ def main() -> int:
     LOG.info("Using address: %s", cfg.zmq_address)
 
     deck_profile_path = Path(cfg.decks_dir) / cfg.ruleset / "profile.json"
-    if deck_profile_path.exists():
-        profile_path_used = deck_profile_path
-    else:
-        profile_path_used = Path(cfg.legacy_profile_path)
+    profile_path_used = deck_profile_path if deck_profile_path.exists() else Path(cfg.legacy_profile_path)
 
     LOG.info(
         "[CONFIG] ruleset=%s strategy=%s decks_dir=%s confirm_mode=%s profile_path=%s",
         cfg.ruleset,
         cfg.strategy,
         cfg.decks_dir,
-        cfg.confirm_mode,
+        getattr(cfg, "confirm_mode", "unknown"),
         profile_path_used,
     )
 
@@ -145,29 +147,23 @@ def main() -> int:
         profile_path=cfg.legacy_profile_path,
     )
     LOG.info("[CONFIG] strategy_loaded=%s profile=%s", type(strategy).__name__, profile_path_used)
-    dialog_manager = DialogManager(repeat_limit=cfg.dialog_max_repeat)
+
+    dialog_resolver = DialogResolver(max_repeat=getattr(cfg, "dialog_max_repeat", 3))
     plan_executor = PlanExecutor()
+
     cooldowns = TurnCooldowns()
-    pending_plan: list[Action] = []
+    pending_plan = []
     pending_index = 0
     actions_this_turn = 0
-    last_plan_signature: tuple | None = None
-    plan_cooldown_ticks = 0
-
-    hand_snapshot = read_hand(client, profile_index.profile)
-    unknown_ids = sorted(
-        {
-            card.card_id
-            for card in hand_snapshot
-            if card.card_id is not None and card.name == "unknown"
-        }
-    )
-    hand_summary = [card.name for card in hand_snapshot]
-    LOG.info("[HAND] summary=%s", hand_summary)
-    if unknown_ids:
-        LOG.warning("[HAND] unknown_card_ids=%s", unknown_ids)
-
+    max_actions_per_turn = int(getattr(cfg, "max_actions_per_turn", 8))
     last_turn: Optional[int] = None
+
+    # quick hand snapshot logging
+    try:
+        hand_snapshot = read_hand(client, profile_index.profile)
+        LOG.info("[HAND] summary=%s", [c.name for c in hand_snapshot])
+    except Exception:
+        LOG.warning("[HAND] read failed (non-fatal)")
 
     while True:
         if not _try("is_dueling", client.is_dueling):
@@ -179,97 +175,75 @@ def main() -> int:
             _try("duel_ended_exit_duel", client.duel_ended_exit_duel)
             return 0
 
-        if plan_cooldown_ticks > 0:
-            plan_cooldown_ticks -= 1
-
         state = snapshot_state(client) or {}
-        hand_snapshot = read_hand(client, profile_index.profile)
 
+        # Resolve dialogs ASAP
         if _try("is_inputting", client.is_inputting):
-            dialog_manager.resolve_once(client, state, profile_index.profile, cfg)
-            time.sleep(cfg.tick_s)
+            dialog_resolver.resolve(client, profile_index=profile_index, strategy=strategy, state=state, cfg=cfg)
+            time.sleep(getattr(cfg, "tick_s", 0.15))
             continue
 
         turn = _try("get_turn_number", client.get_turn_number)
         if isinstance(turn, int) and turn != last_turn:
             last_turn = turn
-            cooldowns.stuck_dialog_cycles = 0
+            actions_this_turn = 0
             pending_plan = []
             pending_index = 0
-            actions_this_turn = 0
-            last_plan_signature = None
-            plan_cooldown_ticks = 0
+            dialog_resolver.reset()
             LOG.info("[TURN] New turn detected: %s", turn)
 
         if not _try("is_my_turn", client.is_my_turn):
-            time.sleep(cfg.tick_s)
+            time.sleep(getattr(cfg, "tick_s", 0.15))
             continue
 
         phase = _try("get_current_phase", client.get_current_phase)
         if phase is None:
-            time.sleep(cfg.tick_s)
+            time.sleep(getattr(cfg, "tick_s", 0.15))
             continue
 
-        if isinstance(phase, Phase):
-            phase_name = phase.name.lower()
-        else:
-            phase_name = str(phase).lower()
+        if _phase_name(phase) in ("main1", "main_phase_1", "main_phase1", "main_phase"):
+            if actions_this_turn >= max_actions_per_turn:
+                time.sleep(getattr(cfg, "tick_s", 0.15))
+                continue
 
-        if phase_name in ("main1", "main_phase_1", "main_phase1", "main_phase"):
-            if pending_plan:
-                if actions_this_turn >= 6:
-                    time.sleep(cfg.tick_s)
-                    continue
-                action = pending_plan[pending_index]
-                LOG.info(
-                    "[EXEC] step %s/%s type=%s desc=%s",
-                    pending_index + 1,
-                    len(pending_plan),
-                    action.type,
-                    action.description,
-                )
-                ok = plan_executor.execute_next(pending_plan, pending_index, client)
-                if ok:
-                    pending_index += 1
-                    actions_this_turn += 1
-                if _try("is_inputting", client.is_inputting):
-                    time.sleep(cfg.tick_s)
-                    continue
-                if pending_index >= len(pending_plan):
+            hand_snapshot = read_hand(client, profile_index.profile)
+
+            # Build a new plan if we don't have one
+            if not pending_plan:
+                try:
+                    pending_plan = strategy.plan_main_phase_1(state, hand_snapshot, client, cfg)
+                except Exception:
+                    LOG.error("strategy.plan_main_phase_1 crashed:\n%s", traceback.format_exc())
                     pending_plan = []
-                    pending_index = 0
-                time.sleep(cfg.tick_s)
-                continue
 
-            if actions_this_turn >= 6:
-                time.sleep(cfg.tick_s)
-                continue
+                if not pending_plan:
+                    # hard fallback
+                    pending_plan = [
+                        # PlanExecutor understands "pass"
+                        type("ActionShim", (), {"type": "pass", "args": {}, "description": "Fallback pass", "retries": 1, "delay_ms": 80})()
+                    ]
 
-            try:
-                actions = strategy.plan_main_phase_1(state, hand_snapshot, client, cfg)
-            except Exception:
-                LOG.error("strategy.plan_main_phase_1 crashed:\n%s", traceback.format_exc())
-                actions = [Action(type="pass", args={}, description="Fallback pass after strategy crash")]
+                pending_index = 0
+                LOG.info("[PLAN] built n_actions=%s opener=%s", len(pending_plan), getattr(pending_plan[0], "description", ""))
 
-            if not actions:
-                actions = [Action(type="pass", args={}, description="No actions planned -> pass")]
+            # Execute one step per tick (lets dialogs appear between steps)
+            ok = plan_executor.execute_next(pending_plan, pending_index, client, cfg=cfg)
+            actions_this_turn += 1
 
-            signature = tuple((action.type, action.description) for action in actions)
-            if signature == last_plan_signature and plan_cooldown_ticks > 0:
-                time.sleep(cfg.tick_s)
-                continue
+            if ok:
+                pending_index += 1
+            else:
+                # Don't spin forever on a failing action
+                pending_index += 1
 
-            opener = actions[0].description if actions else "unknown"
-            LOG.info("[PLAN] built n_actions=%s opener=%s", len(actions), opener)
-            pending_plan = actions
-            pending_index = 0
-            last_plan_signature = signature
-            plan_cooldown_ticks = 4
-        else:
-            time.sleep(cfg.tick_s)
+            if pending_index >= len(pending_plan):
+                pending_plan = []
+                pending_index = 0
+
+            time.sleep(getattr(cfg, "tick_s", 0.15))
             continue
 
-        time.sleep(cfg.tick_s)
+        time.sleep(getattr(cfg, "tick_s", 0.15))
 
 
 if __name__ == "__main__":
