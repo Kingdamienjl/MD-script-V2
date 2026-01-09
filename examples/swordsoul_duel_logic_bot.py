@@ -20,17 +20,14 @@ import os
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from jduel_bot.config import BotConfig
 from jduel_bot.jduel_bot_client import JDuelBotClient
-from jduel_bot.jduel_bot_enums import (
-    CardSelection,
-    DialogButtonType,
-    Phase,
-)
+from jduel_bot.jduel_bot_enums import Phase
 
-from logic.profile import ProfileIndex
+from logic.dialog_resolver import DialogResolver
 from logic.strategy_registry import Action, load_strategy
 
 # Optional (repo may already provide these)
@@ -115,75 +112,13 @@ def _set_confirm_mode(client: JDuelBotClient, cfg: BotConfig) -> None:
     _try(f"set_activation_confirmation({mode.name})", client.set_activation_confirmation, mode)
 
 
-def _resolve_dialog(
-    client: JDuelBotClient,
-    profile_index: ProfileIndex,
-    cooldowns: TurnCooldowns,
-) -> bool:
-    """
-    Attempt to resolve any open dialog.
-
-    Returns True if we *think* we made progress (clicked something), else False.
-    """
-    dialog_cards = _try("get_dialog_card_list", client.get_dialog_card_list)
-    if not dialog_cards:
-        return False
-
-    cooldowns.stuck_dialog_cycles += 1
-    is_stuck = cooldowns.stuck_dialog_cycles >= 6
-
-    LOG.info("[DIALOG] cards=%s stuck_cycles=%s", dialog_cards, cooldowns.stuck_dialog_cycles)
-
-    choice = profile_index.pick_dialog_choice(dialog_cards)
-
-    sequences = [
-        [("select", choice, DialogButtonType.Middle), ("confirm", None, DialogButtonType.Right)],
-        [("select", choice, DialogButtonType.Right), ("confirm", None, DialogButtonType.Right)],
-        [("confirm", None, DialogButtonType.Right)],
-        [("confirm", None, DialogButtonType.Middle)],
-    ]
-
-    progressed = False
-    for step, sel, btn in sequences:
-        if sel is None:
-            _try(
-                f"select_card_from_dialog(None,{btn.name})",
-                client.select_card_from_dialog,
-                None,
-                btn,
-                120,
-            )
-        else:
-            _try(
-                f"select_card_from_dialog(sel={sel.card_index},{btn.name})",
-                client.select_card_from_dialog,
-                sel,
-                btn,
-                120,
-            )
-        progressed = True
-        time.sleep(0.12)
-
-        if not _try("is_inputting", client.is_inputting):
-            cooldowns.stuck_dialog_cycles = 0
-            return True
-
-    if is_stuck:
-        LOG.warning("[DIALOG] appears stuck -> trying cancel_activation_prompts + handle_unexpected_prompts")
-        _try("cancel_activation_prompts", client.cancel_activation_prompts)
-        time.sleep(0.1)
-        _try("handle_unexpected_prompts", client.handle_unexpected_prompts)
-        time.sleep(0.1)
-        cooldowns.stuck_dialog_cycles = max(0, cooldowns.stuck_dialog_cycles - 3)
-
-    return progressed
-
-
 def _resolve_if_inputting(
     client: JDuelBotClient,
     cfg: BotConfig,
-    profile_index: ProfileIndex,
     cooldowns: TurnCooldowns,
+    dialog_resolver: DialogResolver,
+    strategy,
+    state: dict,
 ) -> None:
     if not _try("is_inputting", client.is_inputting):
         cooldowns.stuck_dialog_cycles = 0
@@ -193,8 +128,7 @@ def _resolve_if_inputting(
     _try("handle_unexpected_prompts", client.handle_unexpected_prompts)
     _set_confirm_mode(client, cfg)
 
-    if _resolve_dialog(client, profile_index, cooldowns):
-        return
+    dialog_resolver.resolve(client, strategy=strategy, state=state, cfg=cfg)
 
     _try("cancel_activation_prompts", client.cancel_activation_prompts)
 
@@ -258,18 +192,10 @@ def _execute_actions(client: JDuelBotClient, cfg: BotConfig, actions: list[Actio
 def _handle_my_main_phase_1(
     client: JDuelBotClient,
     cfg: BotConfig,
+    strategy,
 ) -> None:
-    state = snapshot_state(client) or {}
-
-    strategy = load_strategy(
-        deck_name=cfg.ruleset,
-        strategy_name=cfg.strategy,
-        decks_dir=cfg.decks_dir,
-        profile_path=cfg.legacy_profile_path,
-    )
-
     try:
-        actions = strategy.plan_main_phase_1(state, client, cfg)
+        actions = strategy.plan_main_phase_1(snapshot_state(client) or {}, client, cfg)
     except Exception:
         LOG.error("strategy.plan_main_phase_1 crashed:\n%s", traceback.format_exc())
         actions = [Action(type="pass", args={}, description="Fallback pass after strategy crash")]
@@ -287,12 +213,33 @@ def main() -> int:
     LOG.info('"Swordsoul Duel Logic Bot" has been started...')
     LOG.info("Using address: %s", cfg.zmq_address)
 
+    deck_profile_path = Path(cfg.decks_dir) / cfg.ruleset / "profile.json"
+    if deck_profile_path.exists():
+        profile_path_used = deck_profile_path
+    else:
+        profile_path_used = Path(cfg.legacy_profile_path)
+
+    LOG.info(
+        "[CONFIG] ruleset=%s strategy=%s decks_dir=%s confirm_mode=%s profile_path=%s",
+        cfg.ruleset,
+        cfg.strategy,
+        cfg.decks_dir,
+        cfg.confirm_mode,
+        profile_path_used,
+    )
+
     client = JDuelBotClient(address=cfg.zmq_address, timeout_ms=cfg.timeout_ms)
     LOG.info("[ZMQ] Connected to %s", cfg.zmq_address)
 
     dump_debug_info_once(client)
 
-    profile_index = ProfileIndex.from_deck(cfg.ruleset, cfg.decks_dir, cfg.legacy_profile_path)
+    strategy = load_strategy(
+        deck_name=cfg.ruleset,
+        strategy_name=cfg.strategy,
+        decks_dir=cfg.decks_dir,
+        profile_path=cfg.legacy_profile_path,
+    )
+    dialog_resolver = DialogResolver(max_repeat=cfg.dialog_max_repeat)
     cooldowns = TurnCooldowns()
 
     last_turn: Optional[int] = None
@@ -307,7 +254,8 @@ def main() -> int:
             _try("duel_ended_exit_duel", client.duel_ended_exit_duel)
             return 0
 
-        _resolve_if_inputting(client, cfg, profile_index, cooldowns)
+        state = snapshot_state(client) or {}
+        _resolve_if_inputting(client, cfg, cooldowns, dialog_resolver, strategy, state)
 
         turn = _try("get_turn_number", client.get_turn_number)
         if isinstance(turn, int) and turn != last_turn:
@@ -331,7 +279,7 @@ def main() -> int:
 
         if phase_name in ("main1", "main_phase_1", "main_phase1", "main_phase"):
             LOG.info(">>> ENTER handle_my_main_phase_1")
-            _handle_my_main_phase_1(client, cfg)
+            _handle_my_main_phase_1(client, cfg, strategy)
 
         time.sleep(cfg.tick_s)
 

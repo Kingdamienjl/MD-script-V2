@@ -8,12 +8,22 @@ The bot configuration is driven by environment variables so you can tune dialog 
 
 1) Copy `logic/decks/_template` to `logic/decks/<newdeck>`.
 2) Edit `logic/decks/<newdeck>/profile.json` to match your deck list.
-3) Implement `logic/decks/<newdeck>/strategy.py` exporting `get_strategy(profile, strategy_name)`.
-4) Set `BOT_DECK=<newdeck>` when launching the bot.
+3) Implement `logic/rulesets/<newdeck>/strategy.py` exporting `get_strategy(profile, strategy_name)`.
+4) Set `BOT_RULESET=<newdeck>` when launching the bot.
 
 ### Profile location and strict filtering
 
 Profiles live at `logic/decks/<deck>/profile.json` (preferred) or the legacy `logic/deck_profile.json`. When `BOT_STRICT_PROFILE=1`, the bot will only select card names found in the active profile and will log `[PROFILE] blocked unknown card name=<name>` for any unknown names. Add new card names to the appropriate profile list to make them eligible for selection.
+
+### Regenerating the Swordsoul Tenyi profile
+
+Run the helper script to rebuild `logic/decks/swordsoul_tenyi/profile.json` from the decklist text file:
+
+```
+python tools/build_profile_from_decklist.py
+```
+
+By default, it looks for `swordsoul_decklist.txt` (preferred) or `A competitive Swordsoul Tenyi deck.txt` at the repo root. You can pass `--decklist path/to/file.txt` to target a specific list.
 
 ### Environment variables
 
