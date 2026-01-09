@@ -15,6 +15,16 @@ The bot configuration is driven by environment variables so you can tune dialog 
 
 Profiles live at `logic/decks/<deck>/profile.json` (preferred) or the legacy `logic/deck_profile.json`. When `BOT_STRICT_PROFILE=1`, the bot will only select card names found in the active profile and will log `[PROFILE] blocked unknown card name=<name>` for any unknown names. Add new card names to the appropriate profile list to make them eligible for selection.
 
+### Regenerating the Swordsoul Tenyi profile
+
+Run the helper script to rebuild `logic/decks/swordsoul_tenyi/profile.json` from the decklist text file:
+
+```
+python tools/build_profile_from_decklist.py
+```
+
+By default, it looks for `swordsoul_decklist.txt` (preferred) or `A competitive Swordsoul Tenyi deck.txt` at the repo root. You can pass `--decklist path/to/file.txt` to target a specific list.
+
 ### Environment variables
 
 - `BOT_ACTION_DELAY_MS`: Delay in milliseconds between actions (default: `120`).
