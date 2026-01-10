@@ -3,7 +3,7 @@ Profile loading + small helpers.
 
 A "profile" is deck metadata used for heuristics:
 - dialog pick priority (which card to pick when a dialog shows a list)
-- optional per-card weights / tags for future strategy work
+- optional per-card weights / tags for strategy planning
 """
 
 from __future__ import annotations
@@ -71,17 +71,12 @@ def validate_profile(profile: Dict[str, Any]) -> None:
         raise ValueError("Profile missing deck_name.")
     if not isinstance(profile.get("dialog_pick_priority"), list):
         raise ValueError("Profile missing dialog_pick_priority list.")
-    if not isinstance(profile.get("dialog_priority"), list):
-        raise ValueError("Profile missing dialog_priority list.")
-    if profile.get("dialog_default_button") not in ("middle_then_right",):
-        raise ValueError("Profile dialog_default_button must be 'middle_then_right'.")
-    priority_groups = profile.get("priority_groups")
-    if not isinstance(priority_groups, dict):
-        raise ValueError("Profile missing priority_groups mapping.")
+
     cards = profile.get("cards")
     if not isinstance(cards, dict) or not cards:
         raise ValueError("Profile must include a non-empty cards mapping.")
     _validate_cards(cards)
+
     extra_deck = profile.get("extra_deck")
     if not isinstance(extra_deck, dict) or not extra_deck:
         raise ValueError("Profile must include extra_deck mapping.")
@@ -122,9 +117,6 @@ class ProfileIndex:
         return cls(profile=_read_profile_from_deck(deck_name, decks_dir, fallback_path))
 
     def _dialog_priority(self) -> List[str]:
-        # supported schemas:
-        # - {"dialog_pick_priority": [...]}
-        # - {"priorities": {"dialog_pick": [...]}}
         if isinstance(self.profile.get("dialog_pick_priority"), list):
             return [str(x) for x in self.profile["dialog_pick_priority"]]
         pr = self.profile.get("priorities") or {}
@@ -133,12 +125,6 @@ class ProfileIndex:
         return []
 
     def pick_dialog_choice(self, dialog_cards: List[str]) -> Optional[CardSelection]:
-        """
-        Choose a CardSelection for a dialog list.
-
-        - Prefers the first matching name found in the profile priority list.
-        - Falls back to index 0 if nothing matches.
-        """
         if not dialog_cards:
             return None
 
@@ -174,27 +160,6 @@ class DeckProfile:
 
     def has_tag(self, name: str, tag: str) -> bool:
         return tag in self.tags_for(name)
-
-    def is_opener(self, name: str) -> bool:
-        return self.has_tag(name, "opener")
-
-    def is_extender(self, name: str) -> bool:
-        return self.has_tag(name, "extender")
-
-    def is_starter(self, name: str) -> bool:
-        return self.has_tag(name, "starter")
-
-    def is_disruption(self, name: str) -> bool:
-        return self.has_tag(name, "disruption")
-
-    def is_brick(self, name: str) -> bool:
-        return self.has_tag(name, "brick")
-
-    def is_search(self, name: str) -> bool:
-        return self.has_tag(name, "search")
-
-    def is_discard_fodder(self, name: str) -> bool:
-        return self.has_tag(name, "discard_fodder")
 
     def count(self, name: str) -> int:
         data = self._card_data(name) or {}
