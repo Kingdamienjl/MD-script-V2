@@ -26,7 +26,7 @@ class SwordsoulTenyiStrategy:
     name: str = "default"
     deck_name: str = "swordsoul_tenyi"
 
-    def plan_main_phase_1(self, state: dict, client: object, cfg) -> List[Action]:
+    def plan_main_phase_1(self, state: dict, hand: list, client: object, cfg) -> List[Action]:
         # We keep this safe until we wire reliable "hand -> card names".
         return [Action(type="pass", description="Skeleton strategy (no hand introspection yet) -> pass")]
 
