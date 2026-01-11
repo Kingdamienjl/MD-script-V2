@@ -4,53 +4,102 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Iterable, Optional
+from typing import Iterable
+
+from logic.action_queue import Action
 
 LOG = logging.getLogger("plan_executor")
 
 
 class PlanExecutor:
-    def execute(self, actions: Iterable[object], client: object, cfg: Optional[object] = None) -> None:
+    def execute(self, actions: Iterable[Action], client: object, cfg: object | None = None) -> None:
         for action in actions:
-            self._execute_with_retry(client, action, cfg=cfg)
+            self._execute_with_retry(client, action, cfg)
 
-    def execute_next(self, actions: list[object], index: int, client: object, cfg: Optional[object] = None) -> bool:
+    # Keep compatibility with older incremental executors
+    def execute_next(self, actions: list[Action], index: int, client: object, cfg: object | None = None) -> bool:
         if index < 0 or index >= len(actions):
             return False
-        return self._execute_with_retry(client, actions[index], cfg=cfg)
+        return self._execute_with_retry(client, actions[index], cfg)
 
-    def _execute_with_retry(self, client: object, action: object, cfg: Optional[object] = None) -> bool:
-        retries = int(getattr(action, "retries", 1) or 1)
-        delay_ms = int(getattr(action, "delay_ms", 80) or 80)
+    def _execute_with_retry(self, client: object, action: Action, cfg: object | None = None) -> bool:
+        attempts = max(1, int(getattr(action, "retries", 1)))
+        delay_ms = int(getattr(action, "delay_ms", 120))
 
-        for attempt in range(retries):
+        for attempt in range(attempts):
             ok = self._execute_action(client, action)
             if ok:
-                LOG.info("[EXEC] ok type=%s desc=%s", getattr(action, "type", "?"), getattr(action, "description", ""))
-                time.sleep(float(getattr(cfg, "action_delay_s", 0.10)) if cfg else 0.10)
+                LOG.info("[EXEC] ok type=%s desc=%s", action.type, action.description)
                 return True
+            if attempt < attempts - 1:
+                time.sleep(delay_ms / 1000)
 
-            if attempt < retries - 1:
-                time.sleep(delay_ms / 1000.0)
-
-        LOG.warning("[EXEC] fail type=%s desc=%s err=exhausted", getattr(action, "type", "?"), getattr(action, "description", ""))
+        LOG.warning("[EXEC] fail type=%s desc=%s err=exhausted", action.type, action.description)
         return False
 
-    def _execute_action(self, client: object, action: object) -> bool:
-        t = getattr(action, "type", "")
-        args = getattr(action, "args", {}) or {}
-
+    def _execute_action(self, client: object, action: Action) -> bool:
         try:
+            a = action.args or {}
+            t = action.type
+
             if t == "wait_input":
                 getattr(client, "wait_for_input_enabled")()
                 return True
 
-            if t in ("move_phase", "advance_phase"):
-                phase = args.get("phase_enum") or args.get("phase")
+            if t in ("advance_phase", "move_phase"):
+                phase = a.get("phase_enum") or a.get("phase")
                 getattr(client, "move_phase")(phase)
                 return True
 
+            if t == "normal_summon":
+                idx = a.get("index", a.get("hand_index"))
+                pos = a.get("position", "attack")
+                getattr(client, "normal_summon_monster")(idx, pos)
+                return True
+
+            if t == "special_summon_hand":
+                idx = a.get("index", a.get("hand_index"))
+                pos = a.get("position", "attack")
+                fn = getattr(client, "special_summon_monster_from_hand", None)
+                if fn is None:
+                    return False
+                # Some clients accept timeout_seconds; keep it optional.
+                try:
+                    fn(idx, pos, timeout_seconds=5)
+                except TypeError:
+                    fn(idx, pos)
+                return True
+
+            if t == "activate_hand":
+                idx = a.get("index", a.get("hand_index"))
+                getattr(client, "activate_monster_effect_from_hand")(idx)
+                return True
+
+            if t == "activate_field":
+                pos = a.get("position", 0)
+                getattr(client, "activate_monster_effect_from_field")(pos)
+                return True
+
+            if t == "activate_spell_hand":
+                idx = a.get("index", a.get("hand_index"))
+                pos = a.get("position", "face_up")
+                getattr(client, "activate_spell_or_trap_from_hand")(idx, pos)
+                return True
+
+            if t == "set_spell_hand":
+                idx = a.get("index", a.get("hand_index"))
+                pos = a.get("position", "set")
+                getattr(client, "set_spell_or_trap_from_hand")(idx, pos)
+                return True
+
+            if t in ("extra_summon", "extra_deck_summon"):
+                name = a.get("name")
+                positions = a.get("positions", ["attack"])
+                getattr(client, "perform_extra_deck_summon")(name, positions)
+                return True
+
             if t == "pass":
+                # safest generic pass: attempt battle then end
                 try:
                     getattr(client, "move_phase")("battle")
                     time.sleep(0.1)
@@ -59,41 +108,9 @@ class PlanExecutor:
                     pass
                 return True
 
-            if t == "normal_summon":
-                getattr(client, "normal_summon_monster")(args["index"], args.get("position", "attack"))
-                return True
-
-            if t == "special_summon_hand":
-                fn = getattr(client, "special_summon_monster_from_hand")
-                try:
-                    fn(args["index"], args.get("position", "attack"), timeout_seconds=5)
-                except TypeError:
-                    fn(args["index"], args.get("position", "attack"))
-                return True
-
-            if t == "activate_hand":
-                getattr(client, "activate_monster_effect_from_hand")(args["index"])
-                return True
-
-            if t == "activate_field":
-                getattr(client, "activate_monster_effect_from_field")(args["position"])
-                return True
-
-            if t == "activate_spell_hand":
-                getattr(client, "activate_spell_or_trap_from_hand")(args["index"], args.get("position", "face_up"))
-                return True
-
-            if t == "set_spell_hand":
-                getattr(client, "set_spell_or_trap_from_hand")(args["index"], args.get("position", "set"))
-                return True
-
-            if t == "extra_summon":
-                getattr(client, "perform_extra_deck_summon")(args["name"], args.get("positions", ["attack"]))
-                return True
-
-            LOG.debug("[EXEC] unknown action type=%s args=%s", t, args)
-            return True
+            LOG.debug("Unknown action type=%s args=%s", t, a)
+            return False
 
         except Exception as exc:
-            LOG.warning("[EXEC] fail type=%s desc=%s err=%s", t, getattr(action, "description", ""), exc)
+            LOG.warning("[EXEC] fail type=%s desc=%s err=%s", action.type, action.description, exc)
             return False
