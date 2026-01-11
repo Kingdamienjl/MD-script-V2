@@ -3,7 +3,7 @@ Profile loading + small helpers.
 
 A "profile" is deck metadata used for heuristics:
 - dialog pick priority (which card to pick when a dialog shows a list)
-- optional per-card weights / tags for strategy planning
+- per-card weights / tags for future strategy work
 """
 
 from __future__ import annotations
@@ -137,57 +137,3 @@ class ProfileIndex:
                     return CardSelection(card_name=c, card_index=i)
 
         return CardSelection(card_name=cards[0], card_index=0)
-
-
-@dataclass(frozen=True)
-class DeckProfile:
-    profile: Dict[str, Any]
-
-    @classmethod
-    def from_deck(cls, deck_name: str, decks_dir: str, fallback_path: str) -> "DeckProfile":
-        return cls(profile=_read_profile_from_deck(deck_name, decks_dir, fallback_path))
-
-    def _card_data(self, name: str) -> Optional[Dict[str, Any]]:
-        cards = self.profile.get("cards", {})
-        if isinstance(cards, dict):
-            return cards.get(name)
-        return None
-
-    def tags_for(self, name: str) -> List[str]:
-        data = self._card_data(name) or {}
-        tags = data.get("tags", [])
-        return [str(tag) for tag in tags] if isinstance(tags, list) else []
-
-    def has_tag(self, name: str, tag: str) -> bool:
-        return tag in self.tags_for(name)
-
-    def count(self, name: str) -> int:
-        data = self._card_data(name) or {}
-        count = data.get("count", 0)
-        return int(count) if isinstance(count, int) else 0
-
-    def main1_priority(self, name: str) -> float:
-        return float((self._card_data(name) or {}).get("main1_priority", 0))
-
-    def set_priority(self, name: str) -> float:
-        return float((self._card_data(name) or {}).get("set_priority", 0))
-
-    def hold_priority(self, name: str) -> float:
-        return float((self._card_data(name) or {}).get("hold_priority", 0))
-
-    def extra_deck_priority(self) -> List[str]:
-        priority = self.profile.get("extra_deck_priority", [])
-        return [str(name) for name in priority] if isinstance(priority, list) else []
-
-    def extra_deck_counts(self) -> Dict[str, int]:
-        extra_deck = self.profile.get("extra_deck", {})
-        if not isinstance(extra_deck, dict):
-            return {}
-        counts: Dict[str, int] = {}
-        for name, data in extra_deck.items():
-            if isinstance(data, dict) and isinstance(data.get("count"), int):
-                counts[str(name)] = data["count"]
-        return counts
-
-    def cards_by_id(self) -> Dict[int, str]:
-        return build_cards_by_id(self.profile)
