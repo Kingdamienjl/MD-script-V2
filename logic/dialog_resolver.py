@@ -23,10 +23,12 @@ class DialogResolver:
         self,
         client: object,
         profile_index: object | None = None,
+        cooldowns: object | None = None,
         strategy: object | None = None,
         state: Optional[dict] = None,
         cfg: object | None = None,
     ) -> str:
+        _ = cooldowns
         dialog_list = list(getattr(client, "get_dialog_card_list", lambda: [])())
         if not dialog_list:
             self._repeat_count = 0

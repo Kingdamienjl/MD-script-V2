@@ -14,13 +14,47 @@ LOG = logging.getLogger("plan_executor")
 class PlanExecutor:
     def execute(self, actions: Iterable[Action], client: object, cfg: object | None = None) -> None:
         for action in actions:
-            self._execute_with_retry(client, action, cfg)
+            normalized = self._normalize_action(action)
+            if normalized is None:
+                LOG.warning("[EXEC] skip action=%s (unable to normalize)", action)
+                continue
+            self._execute_with_retry(client, normalized, cfg)
 
     # Keep compatibility with older incremental executors
     def execute_next(self, actions: list[Action], index: int, client: object, cfg: object | None = None) -> bool:
         if index < 0 or index >= len(actions):
             return False
-        return self._execute_with_retry(client, actions[index], cfg)
+        normalized = self._normalize_action(actions[index])
+        if normalized is None:
+            LOG.warning("[EXEC] skip action=%s (unable to normalize)", actions[index])
+            return False
+        return self._execute_with_retry(client, normalized, cfg)
+
+    @staticmethod
+    def _normalize_action(action: object) -> Action | None:
+        if isinstance(action, Action):
+            return action
+        if isinstance(action, dict):
+            action_type = action.get("type")
+            if not action_type:
+                return None
+            return Action(
+                type=action_type,
+                args=action.get("args", {}) or {},
+                description=action.get("description", "") or "",
+                retries=int(action.get("retries", 1) or 1),
+                delay_ms=int(action.get("delay_ms", 80) or 80),
+            )
+        action_type = getattr(action, "type", None)
+        if not action_type:
+            return None
+        return Action(
+            type=action_type,
+            args=getattr(action, "args", {}) or {},
+            description=getattr(action, "description", "") or "",
+            retries=int(getattr(action, "retries", 1) or 1),
+            delay_ms=int(getattr(action, "delay_ms", 80) or 80),
+        )
 
     def _execute_with_retry(self, client: object, action: Action, cfg: object | None = None) -> bool:
         attempts = max(1, int(getattr(action, "retries", 1)))
