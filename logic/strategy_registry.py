@@ -37,6 +37,8 @@ class Action:
     type: str
     args: dict = field(default_factory=dict)
     description: str = ""
+    retries: int = 1
+    delay_ms: int = 80
 
 
 class StrategyLike(Protocol):
