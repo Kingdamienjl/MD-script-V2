@@ -21,6 +21,7 @@ class DialogManager:
     def __init__(self, repeat_limit: int = 3) -> None:
         self._expectation: Optional[DialogExpectation] = None
         self._repeat_limit = repeat_limit
+        self._state: dict[str, object] = {}
 
     def expect_cards(
         self,
@@ -39,7 +40,7 @@ class DialogManager:
     def clear_expectation(self) -> None:
         self._expectation = None
 
-    def resolve_once(self, client: object, state: object, profile: dict, cfg) -> bool:
+    def resolve_once(self, client: object, state: Optional[object], profile: dict, cfg) -> bool:
         dialog_list = list(getattr(client, "get_dialog_card_list", lambda: [])())
         if not dialog_list:
             return False
@@ -133,15 +134,21 @@ class DialogManager:
         select(None, DialogButtonType.Right)
         return True
 
-    @staticmethod
-    def _get_state(state: object, key: str):
+    def _get_state(self, state: Optional[object], key: str):
         if isinstance(state, dict):
             return state.get(key)
-        return getattr(state, key, None)
+        if state is None:
+            return self._state.get(key)
+        return getattr(state, key, self._state.get(key))
 
-    @staticmethod
-    def _set_state(state: object, key: str, value) -> None:
+    def _set_state(self, state: Optional[object], key: str, value) -> None:
         if isinstance(state, dict):
             state[key] = value
-        else:
+            return
+        if state is None:
+            self._state[key] = value
+            return
+        try:
             setattr(state, key, value)
+        except Exception:
+            self._state[key] = value
